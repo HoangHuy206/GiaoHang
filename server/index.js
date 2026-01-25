@@ -585,6 +585,34 @@ app.get(/^(?!\/api).+/, (req, res) => {
 
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+
+async function checkAndMigrate() {
+    try {
+        const connection = await pool.getConnection();
+        try {
+            // Check for delivery_lat
+            const [columnsLat] = await connection.query("SHOW COLUMNS FROM orders LIKE 'delivery_lat'");
+            if (columnsLat.length === 0) {
+                console.log('Migrating: Adding delivery_lat to orders table...');
+                await connection.query('ALTER TABLE orders ADD COLUMN delivery_lat DECIMAL(10, 8)');
+            }
+
+            // Check for delivery_lng
+            const [columnsLng] = await connection.query("SHOW COLUMNS FROM orders LIKE 'delivery_lng'");
+            if (columnsLng.length === 0) {
+                console.log('Migrating: Adding delivery_lng to orders table...');
+                await connection.query('ALTER TABLE orders ADD COLUMN delivery_lng DECIMAL(11, 8)');
+            }
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('Migration check failed:', error);
+    }
+}
+
+checkAndMigrate().then(() => {
+    server.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
 });
