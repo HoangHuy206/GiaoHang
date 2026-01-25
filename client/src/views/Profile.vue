@@ -73,6 +73,7 @@
 import { useAuthStore } from '../stores/auth';
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 
 // Import images for consistent display with Food.vue
 import comngon from '@/assets/img/anhND/comngon.jpg'
@@ -117,7 +118,7 @@ const handleFileChange = async (event) => {
     formData.append('email', user.value.email || '');
 
     try {
-        const res = await axios.put(`http://localhost:3000/api/users/${user.value.id}`, formData, {
+        const res = await axios.put(`${API_BASE_URL}/api/users/${user.value.id}`, formData, {
             headers: {
                 'Content-Type': 'multipart/form-data'
             }
@@ -144,7 +145,7 @@ const updateProfile = async () => {
             email: user.value.email || ''
         };
 
-        const res = await axios.put(`http://localhost:3000/api/users/${user.value.id}`, payload);
+        const res = await axios.put(`${API_BASE_URL}/api/users/${user.value.id}`, payload);
 
         if (res.data.success) {
              user.value = res.data.user;
@@ -185,7 +186,7 @@ const formatStatus = (status) => {
 const unlike = async (shopId) => {
     if (!confirm('Bạn muốn bỏ yêu thích quán này?')) return;
     try {
-        await axios.post('http://localhost:3000/api/like', {
+        await axios.post(`${API_BASE_URL}/api/like`, {
             maNguoiDung: user.value.id,
             maQuan: shopId
         });
@@ -200,11 +201,11 @@ onMounted(async () => {
     if (auth.user) {
         try {
             // Load Orders
-            const resOrders = await axios.get(`http://localhost:3000/api/orders?role=${auth.user.role}&userId=${auth.user.id}`);
+            const resOrders = await axios.get(`${API_BASE_URL}/api/orders?role=${auth.user.role}&userId=${auth.user.id}`);
             orders.value = resOrders.data;
 
             // Load Favorites
-            const resFav = await axios.get(`http://localhost:3000/api/like/${auth.user.id}`);
+            const resFav = await axios.get(`${API_BASE_URL}/api/like/${auth.user.id}`);
             favorites.value = resFav.data.map(shop => ({
                 ...shop,
                 // Override image if local mapping exists
