@@ -356,6 +356,50 @@ app.put('/api/orders/:id/status', async (req, res) => {
             if (status === 'finding_driver') {
                 io.emit('driver_notification', { message: 'New order available!', orderId }); // Broadcast to all drivers
 
+                // --- BROADCAST ORDER TO NEARBY DRIVERS ---
+                const [fullOrder] = await pool.query(`
+                    SELECT o.*, s.name as ten_quan, s.lat as lat_don, s.lng as lng_don, s.image_url as hinh_anh_quan,
+                           u.full_name as ten_khach_hang
+                    FROM orders o 
+                    JOIN shops s ON o.shop_id = s.id 
+                    JOIN users u ON o.user_id = u.id
+                    WHERE o.id = ?`, [orderId]);
+
+                if (fullOrder.length > 0) {
+                    const orderData = fullOrder[0];
+                    // Fetch items for the popup
+                    const [items] = await pool.query('SELECT p.name, oi.quantity FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?', [orderId]);
+                    const itemNames = items.map(i => `${i.name} (${i.quantity})`).join(', ');
+
+                    const socketData = {
+                        orderId: orderId,
+                        ma_don_hang: 'DH' + orderId,
+                        ten_khach_hang: orderData.ten_khach_hang,
+                        ten_mon_an: itemNames,
+                        tong_tien: new Intl.NumberFormat('vi-VN').format(orderData.total_price) + 'đ',
+                        ten_quan: orderData.ten_quan,
+                        hinh_anh_quan: orderData.hinh_anh_quan,
+                        lat_don: Number(orderData.lat_don),
+                        lng_don: Number(orderData.lng_don),
+                        dia_chi_giao: orderData.delivery_address,
+                        // Tọa độ khách (giả định hoặc lấy từ bản đồ nếu có lưu)
+                        lat_tra: 21.0285, // Fallback
+                        lng_tra: 105.8542 
+                    };
+
+                    console.log('Broadcasting confirmed order to drivers:', orderId);
+                    
+                    let notifiedCount = 0;
+                    onlineDrivers.forEach((driver, sid) => {
+                        const dist = calculateDistance(socketData.lat_don, socketData.lng_don, driver.lat, driver.lng);
+                        if (dist <= 10) {
+                            io.to(sid).emit('place_order', socketData);
+                            notifiedCount++;
+                        }
+                    });
+                    console.log(`Notified ${notifiedCount} drivers within 10km for order #${orderId}`);
+                }
+
                 // --- SEND CONFIRMATION EMAIL TO USER ---
                 if (o.user_email) {
                     console.log(`Đang gửi email xác nhận đến: ${o.user_email}`);
