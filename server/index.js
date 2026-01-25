@@ -519,7 +519,7 @@ app.get('/api/like/:userId', async (req, res) => {
 });
 
 // CATCH-ALL ROUTE FOR FRONTEND
-app.get('*', (req, res) => {
+app.get('/:path*', (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 
