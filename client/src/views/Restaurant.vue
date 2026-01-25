@@ -52,6 +52,7 @@ import { useAuthStore } from '../stores/auth';
 import { cartBus } from '../utils/cartBus';
 import axios from 'axios';
 import { useRouter } from 'vue-router';
+import { API_BASE_URL } from '../config';
 
 const route = useRoute();
 const router = useRouter();
@@ -62,7 +63,7 @@ const searchQuery = ref('');
 
 onMounted(async () => {
     try {
-        const res = await axios.get(`http://localhost:3000/api/shops/${route.params.id}`);
+        const res = await axios.get(`${API_BASE_URL}/api/shops/${route.params.id}`);
         shop.value = res.data;
         products.value = res.data.products;
     } catch (error) {

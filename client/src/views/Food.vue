@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'        
 import { RouterLink } from 'vue-router'
 import axios from 'axios' 
+import { API_BASE_URL } from '../config'
 
 // --- 2. IMPORT EVENT BUS TỪ GIỎ HÀNG (Mới thêm) ---
 import { cartBus } from '@/utils/cartBus.js' 
@@ -94,7 +95,7 @@ onMounted(async () => {
   const currentUser = getCurrentUser();
   if (currentUser && currentUser.id) { // Fixed: id instead of account_id
       try {
-          const res = await axios.get(`http://localhost:3000/api/like/${currentUser.id}`); // Fixed: localhost
+          const res = await axios.get(`${API_BASE_URL}/api/like/${currentUser.id}`); 
           const likedList = res.data; 
 
           restaurants.value.forEach(r => {
@@ -122,7 +123,7 @@ const toggleFavorite = async (res) => {
   res.isFavorite = !res.isFavorite;
 
   try {
-      const response = await axios.post('http://localhost:3000/api/like', { // Fixed: localhost
+      const response = await axios.post(`${API_BASE_URL}/api/like`, { 
           maNguoiDung: currentUser.id, // Fixed: id
           maQuan: res.id
       });

@@ -61,6 +61,7 @@
 <script setup>
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { API_BASE_URL } from '../config';
 
 const router = useRouter();
 const fullname = ref(''); // Thêm ref cho Họ tên
@@ -78,10 +79,9 @@ const handleRegister = async () => {
 
   try {
     // 2. Gửi dữ liệu về Server (Bao gồm cả email)
-    const response = await fetch('http://localhost:3000/api/auth/register', { 
+    const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+      headers: {        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         fullName: fullname.value,

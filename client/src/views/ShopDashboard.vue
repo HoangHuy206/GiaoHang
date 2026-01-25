@@ -44,11 +44,12 @@ import { ref, onMounted } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { API_BASE_URL, SOCKET_URL } from '../config';
 
 const auth = useAuthStore();
 const orders = ref([]);
 const loading = ref(true);
-const socket = io('http://localhost:3000');
+const socket = io(SOCKET_URL);
 
 // Assuming the auth.user has the shopId linked or we fetch by user ID
 // For this prototype, let's assume we fetch all orders for the shop the user owns.
@@ -63,7 +64,7 @@ const fetchOrders = async () => {
         // Quick fix: Fetch shop details first to get ID.
         
         // Actually, let's just fetch all shops, find the one owned by this user.
-        const shopsRes = await axios.get('http://localhost:3000/api/shops');
+        const shopsRes = await axios.get(`${API_BASE_URL}/api/shops`);
         // This is inefficient but works for the prototype without changing backend auth structure deeply
         // Wait, schema says shops has user_id. 
         // Backend `GET /orders` logic: `if (role === 'shop') query += ' WHERE o.shop_id = ?'`
@@ -72,7 +73,7 @@ const fetchOrders = async () => {
         const myShop = shopsRes.data.find(s => s.user_id === auth.user.id);
         
         if (myShop) {
-             const res = await axios.get(`http://localhost:3000/api/orders?role=shop&shopId=${myShop.id}`);
+             const res = await axios.get(`${API_BASE_URL}/api/orders?role=shop&shopId=${myShop.id}`);
              orders.value = res.data;
              
              // Join Socket Room
@@ -87,7 +88,7 @@ const fetchOrders = async () => {
 
 const updateStatus = async (orderId, status) => {
     try {
-        await axios.put(`http://localhost:3000/api/orders/${orderId}/status`, { status });
+        await axios.put(`${API_BASE_URL}/api/orders/${orderId}/status`, { status });
         // Optimistic update
         const o = orders.value.find(x => x.id === orderId);
         if (o) o.status = status;

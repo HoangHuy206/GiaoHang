@@ -148,75 +148,12 @@
 <script setup>
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { API_BASE_URL } from '../config';
 // import emailjs from '@emailjs/browser'; // Uncomment if installed
 
 const router = useRouter();
-
-// --- CẤU HÌNH EMAILJS ---
-const SERVICE_ID = 'service_x72kuxn';
-const TEMPLATE_ID = 'template_qm7y8o2';
-const PUBLIC_KEY = 'OQJryL3gJ2al-goTB';
-
-// --- STATE ---
-const username = ref('');
-const password = ref('');
-const fullName = ref('');
-const email = ref('');
-const phone = ref('');
-const cccd = ref('');
-const gender = ref('Nam');
-const address = ref('');
-const vehicle = ref('');
-const isLoading = ref(false);
-
-// Chỉ cho phép nhập số
-const restrictInputToNumbers = (event) => {
-  const value = (event.target.value || '').replace(/[^0-9]/g, '');
-  event.target.value = value;
-  if (event.target.id === 'phone') phone.value = value;
-  if (event.target.id === 'cccd') cccd.value = value;
-};
-
-// Helper trim
-const clean = (v) => (v ?? '').toString().trim();
-
-const handleRegister = async () => {
-  if (isLoading.value) return;
-  isLoading.value = true;
-
-  try {
-    // --- validate frontend ---
-    const u = clean(username.value);
-    const p = clean(password.value);
-    const n = clean(fullName.value);
-    const em = clean(email.value);
-    const ph = clean(phone.value);
-    const id = clean(cccd.value);
-    const addr = clean(address.value);
-    const ve = clean(vehicle.value);
-
-    if (!u || !p || !n) return alert('Vui lòng nhập đủ Tên đăng nhập, Mật khẩu và Họ tên.');
-    if (!em) return alert('Vui lòng nhập Email.');
-    if (ph.length !== 10) return alert('Số điện thoại phải đúng 10 chữ số.');
-    if (id.length !== 12) return alert('CCCD phải đúng 12 chữ số.');
-    if (!addr || !ve) return alert('Vui lòng nhập Nơi ở và Phương tiện.');
-
-    // --- payload gửi lên backend ---
-    // Mapping keys to match Server Schema & Endpoint
-    const payload = {
-      username: u,
-      password: p,
-      fullName: n,
-      email: em,
-      phone: ph,
-      cccd: id,
-      gender: gender.value,
-      address: addr,
-      vehicle: ve,
-      role: 'driver' // Force role to driver
-    };
-
-    const response = await fetch('http://localhost:3000/api/auth/register', {
+// ... (rest)
+    const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
