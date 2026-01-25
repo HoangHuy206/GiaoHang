@@ -1,0 +1,44 @@
+import { createRouter, createWebHistory } from 'vue-router';
+import Home from '../views/Home.vue';
+import Login from '../views/Login.vue';
+import DangKyTaiXe from '../views/DangKyTaiXe.vue';
+import DangKyNguoiDung from '../views/DangKyNguoiDung.vue';
+import HoiDangKy from '../views/HoiDangKy.vue';
+import Food from '../views/Food.vue';
+import Restaurant from '../views/Restaurant.vue';
+import GioHang from '../views/GioHang.vue';
+import TheoDoiDonHang from '../views/TheoDoiDonHang.vue';
+import ThanhToan from '../views/ThanhToan.vue';
+import TrangChuTaiXe from '../views/TrangChuTaiXe.vue';
+import ShopDashboard from '../views/ShopDashboard.vue';
+import Profile from '../views/Profile.vue';
+import PageNotFound from '../assets/img/A404/l404.vue';
+
+const routes = [
+  { path: '/', component: Home ,meta: { title: 'Trang chủ - Giao Hàng' } },
+  { path: '/login', component: Login ,meta: { title: 'Đăng nhập ' } },
+  { path: '/hoidangky', component: HoiDangKy , meta: { title: 'Hỏi đăng ký' } },
+  { path: '/dangkynguoidung', component: DangKyNguoiDung, meta: { title: 'Đăng ký người dùng' } },
+  { path: '/dangkytaixe', component: DangKyTaiXe, meta: { title: 'Đăng ký tài xế ' } },
+  { path: '/food', component: Food, meta: { title: 'Đồ ăn' }  },
+  { path: '/restaurant/:id', component: Restaurant , meta: { title: 'Nhà hàng' }  },
+  { path: '/giohang', component: GioHang , meta: { title: 'Giỏ Hàng' } },
+  { path: '/theodoidonhang', component: TheoDoiDonHang, meta: { title: 'Theo dõi đơn hàng' } },
+  { path: '/thanhtoan', component: ThanhToan, meta: { title: 'Thanh toán' } },
+  { path: '/trangchutaixe', component: TrangChuTaiXe, meta: { title: 'Trang chủ tài xế' } }, 
+  { path: '/shop-admin', component: ShopDashboard, meta: { title: 'Shop' } }, 
+  { path: '/profile', component: Profile, meta: { title: 'Tang cá nhân' } },
+  { path: '/:pathMatch(.*)*', component: PageNotFound, meta: { title: '404 - Không tìm thấy trang' } },
+];
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+});
+
+router.beforeEach((to, from, next) => {
+  document.title = to.meta.title || 'Giao Hàng Tận Nơi';
+  next();
+});
+
+export default router;
