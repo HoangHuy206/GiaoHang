@@ -28,6 +28,7 @@ const userEmail = ref(userInfo.email || 'Chưa cập nhật')
 const isSidebarOpen = ref(true)    
 const isOnline = ref(false)        
 const currentOrder = ref(null)     
+const isAccepted = ref(false) // Thêm trạng thái đã nhận đơn
 const driverLocation = ref(null)   
 const currentTab = ref('home') // 'home', 'income', 'inbox', 'profile'
 
@@ -180,6 +181,7 @@ const acceptOrder = async () => {
         });
         
         // 2. Chuyển sang trạng thái đã nhận đơn
+        isAccepted.value = true;
         alert("Đã nhận đơn! Vui lòng di chuyển đến quán để lấy hàng.");
         
         // 3. Cập nhật chỉ đường: Từ Tài xế -> Quán ăn (lat_don, lng_don)
@@ -256,20 +258,24 @@ onUnmounted(() => { socket.disconnect() })
 
         <div class="control-panel-wrapper">
           <!-- Trạng thái chờ đơn -->
-          <div class="control-panel" v-if="!currentOrder">
+          <div class="control-panel" v-if="!currentOrder || isAccepted">
             <div class="status-bar" :class="{ 'online': isOnline }">
               <div class="status-indicator"></div>
-              <p>{{ isOnline ? 'Đang tìm đơn hàng...' : 'Bạn đang tắt kết nối' }}</p>
+              <p v-if="!isAccepted">{{ isOnline ? 'Đang tìm đơn hàng...' : 'Bạn đang tắt kết nối' }}</p>
+              <p v-else style="color: #00b14f; font-weight: bold;">ĐANG TRONG ĐƠN HÀNG</p>
             </div>
             
-            <button class="toggle-online-btn" @click="toggleConnection" :class="{ 'btn-on': isOnline }">
+            <button v-if="!isAccepted" class="toggle-online-btn" @click="toggleConnection" :class="{ 'btn-on': isOnline }">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
               {{ isOnline ? 'TẮT KẾT NỐI' : 'BẬT KẾT NỐI' }}
+            </button>
+            <button v-else class="toggle-online-btn btn-on" @click="isAccepted = false; currentOrder = null; clearShopMarkers(); if(routingControl){map.removeControl(routingControl); routingControl=null;}">
+              HOÀN TẤT ĐƠN HÀNG
             </button>
           </div>
 
           <!-- Thông báo đơn hàng mới -->
-          <div class="order-notification-card animate-bounce-in" v-else>
+          <div class="order-notification-card animate-bounce-in" v-else-if="currentOrder && !isAccepted">
               <div class="order-header">
                   <span class="new-label">ĐƠN HÀNG MỚI!</span>
                   <span class="order-price">{{ currentOrder.tong_tien }}</span>
