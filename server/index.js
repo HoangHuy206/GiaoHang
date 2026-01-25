@@ -387,17 +387,33 @@ app.put('/api/orders/:id/status', async (req, res) => {
                         lng_tra: 105.8542 
                     };
 
-                    console.log('Broadcasting confirmed order to drivers:', orderId);
+                    console.log(`Đang quét ${onlineDrivers.size} tài xế đang trực tuyến...`);
                     
                     let notifiedCount = 0;
                     onlineDrivers.forEach((driver, sid) => {
-                        const dist = calculateDistance(socketData.lat_don, socketData.lng_don, driver.lat, driver.lng);
-                        if (dist <= 10) {
-                            io.to(sid).emit('place_order', socketData);
-                            notifiedCount++;
+                        const dLat = Number(driver.lat);
+                        const dLng = Number(driver.lng);
+                        const sLat = Number(socketData.lat_don);
+                        const sLng = Number(socketData.lng_don);
+
+                        if (!isNaN(dLat) && !isNaN(dLng) && !isNaN(sLat) && !isNaN(sLng)) {
+                            const dist = calculateDistance(sLat, sLng, dLat, dLng);
+                            console.log(`- Tài xế ${driver.driverId}: cách quán ${dist.toFixed(2)}km`);
+                            
+                            if (dist <= 10) {
+                                io.to(sid).emit('place_order', socketData);
+                                notifiedCount++;
+                            }
+                        } else {
+                            console.log(`- Tài xế ${driver.driverId}: Thiếu tọa độ hợp lệ.`);
                         }
                     });
-                    console.log(`Notified ${notifiedCount} drivers within 10km for order #${orderId}`);
+                    
+                    if (notifiedCount === 0) {
+                        console.log('⚠️ KHÔNG tìm thấy tài xế nào trong bán kính 10km.');
+                    } else {
+                        console.log(`✅ Đã gửi đơn hàng đến ${notifiedCount} tài xế.`);
+                    }
                 }
 
                 // --- SEND CONFIRMATION EMAIL TO USER ---

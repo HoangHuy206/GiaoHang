@@ -137,6 +137,8 @@ const toggleConnection = () => {
       driverLocation.value = { lat: latitude, lng: longitude }
       updateDriverMarker(latitude, longitude)
       
+      console.log("Vị trí hiện tại của tài xế:", latitude, longitude);
+
       // Gửi vị trí lên server để tính bán kính 10km
       socket.emit('update_driver_location', {
           driverId: userInfo.id,
@@ -144,8 +146,13 @@ const toggleConnection = () => {
           lng: longitude
       })
     }, (err) => {
-        console.error("Lỗi lấy vị trí:", err)
-    }, { enableHighAccuracy: true })
+        console.error("Lỗi lấy vị trí:", err);
+        let msg = "Không thể lấy vị trí của bạn. ";
+        if (err.code === 1) msg += "Vui lòng cho phép quyền truy cập vị trí trên trình duyệt.";
+        else if (err.code === 2) msg += "Vị trí không khả dụng.";
+        else msg += "Lỗi kết nối định vị.";
+        alert(msg);
+    }, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 })
   } else {
     socket.emit('driver_status_change', { status: 'offline', driverId: userInfo.id })
     if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
