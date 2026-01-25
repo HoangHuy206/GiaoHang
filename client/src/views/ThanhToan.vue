@@ -377,7 +377,9 @@ export default {
                    price: i.price
                })),
                totalPrice: finalTotal.value,
-               deliveryAddress: userInfo.address
+               deliveryAddress: userInfo.address,
+               deliveryLat: selectedCoords.value.lat,
+               deliveryLng: selectedCoords.value.lng
            };
 
            // 2. Gửi API lưu vào Database

@@ -261,15 +261,15 @@ app.get('/api/shops/:id', async (req, res) => {
 
 // Orders
 app.post('/api/orders', async (req, res) => {
-    const { userId, shopId, items, totalPrice, deliveryAddress } = req.body;
+    const { userId, shopId, items, totalPrice, deliveryAddress, deliveryLat, deliveryLng } = req.body;
     // items: [{ productId, quantity, price }]
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
 
         const [orderResult] = await connection.query(
-            'INSERT INTO orders (user_id, shop_id, status, total_price, delivery_address) VALUES (?, ?, ?, ?, ?)',
-            [userId, shopId, 'pending', totalPrice, deliveryAddress]
+            'INSERT INTO orders (user_id, shop_id, status, total_price, delivery_address, delivery_lat, delivery_lng) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [userId, shopId, 'pending', totalPrice, deliveryAddress, deliveryLat, deliveryLng]
         );
         const orderId = orderResult.insertId;
 
@@ -352,7 +352,9 @@ app.put('/api/orders/:id/status', async (req, res) => {
 
         if (orderRows.length > 0) {
             const o = orderRows[0];
-            io.to(`order_${orderId}`).emit('status_update', { status, orderId }); // User tracking
+            // Phát cho cả đơn hàng và toàn bộ hệ thống để tài xế nhận được tự động
+            io.to(`order_${orderId}`).emit('status_update', { status, orderId });
+            io.emit('status_update', { status, orderId }); 
             
             if (status === 'finding_driver') {
                 io.emit('driver_notification', { message: 'New order available!', orderId }); // Broadcast to all drivers
@@ -383,9 +385,8 @@ app.put('/api/orders/:id/status', async (req, res) => {
                         lat_don: Number(orderData.lat_don),
                         lng_don: Number(orderData.lng_don),
                         dia_chi_giao: orderData.delivery_address,
-                        // Tọa độ khách (giả định hoặc lấy từ bản đồ nếu có lưu)
-                        lat_tra: 21.0285, // Fallback
-                        lng_tra: 105.8542 
+                        lat_tra: Number(orderData.delivery_lat),
+                        lng_tra: Number(orderData.delivery_lng)
                     };
 
                     console.log(`Đang quét ${onlineDrivers.size} tài xế đang trực tuyến...`);

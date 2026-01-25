@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS orders (
   status ENUM('pending', 'confirmed', 'finding_driver', 'driver_assigned', 'picked_up', 'delivered', 'cancelled') DEFAULT 'pending',
   total_price DECIMAL(10, 2) NOT NULL,
   delivery_address TEXT,
+  delivery_lat DECIMAL(10, 8),
+  delivery_lng DECIMAL(11, 8),
   pickup_address TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id),
