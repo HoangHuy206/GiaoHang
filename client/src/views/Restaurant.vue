@@ -17,7 +17,7 @@
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-24">
       <div v-for="product in filteredProducts" :key="product.id" class="bg-white p-4 rounded-xl shadow border border-gray-100 flex justify-between items-center group hover:border-green-400 transition">
-        <img :src="product.image_url" alt="" class="w-20 h-20 rounded-lg object-cover mr-4 shadow-sm bg-gray-200">
+        <img :src="getImageUrl(product.image_url)" alt="" class="w-20 h-20 rounded-lg object-cover mr-4 shadow-sm bg-gray-200">
         <div class="flex-1">
             <h3 class="font-bold text-lg text-gray-800 group-hover:text-green-700 transition">{{ product.name }}</h3>
             <p class="text-red-500 font-bold mt-1">{{ formatPrice(product.price) }}</p>
@@ -78,6 +78,16 @@ const filteredProducts = computed(() => {
 
 const formatPrice = (price) => {
     return new Intl.NumberFormat('vi-VN').format(price) + 'k';
+};
+
+const getImageUrl = (url) => {
+    if (!url) return 'https://cdn-icons-png.flaticon.com/512/706/706164.png';
+    if (url.startsWith('http')) {
+        // Nếu là localhost, đổi thành API_BASE_URL
+        return url.replace('http://localhost:3000', API_BASE_URL);
+    }
+    // Nếu là đường dẫn tương đối
+    return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
 const addToCart = (product) => {

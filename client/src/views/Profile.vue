@@ -102,8 +102,10 @@ const fileInput = ref(null);
 
 const getAvatarUrl = (path) => {
     if (!path) return '';
-    if (path.startsWith('http')) return path;
-    return `http://localhost:3000${path}`;
+    if (path.startsWith('http')) {
+        return path.replace('http://localhost:3000', API_BASE_URL);
+    }
+    return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
 };
 
 const handleFileChange = async (event) => {

@@ -4,6 +4,12 @@ import { RouterLink } from 'vue-router'
 import axios from 'axios' 
 import { API_BASE_URL } from '../config'
 
+const getImageUrl = (url) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url.replace('http://localhost:3000', API_BASE_URL);
+    return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
 // --- 2. IMPORT EVENT BUS TỪ GIỎ HÀNG (Mới thêm) ---
 import { cartBus } from '@/utils/cartBus.js' 
 
