@@ -391,21 +391,19 @@ app.put('/api/orders/:id/status', async (req, res) => {
                     
                     let notifiedCount = 0;
                     onlineDrivers.forEach((driver, sid) => {
+                        // Gửi đơn cho tất cả tài xế đang online (Không giới hạn km)
+                        io.to(sid).emit('place_order', socketData);
+                        notifiedCount++;
+                        
                         const dLat = Number(driver.lat);
                         const dLng = Number(driver.lng);
                         const sLat = Number(socketData.lat_don);
                         const sLng = Number(socketData.lng_don);
-
                         if (!isNaN(dLat) && !isNaN(dLng) && !isNaN(sLat) && !isNaN(sLng)) {
                             const dist = calculateDistance(sLat, sLng, dLat, dLng);
-                            console.log(`- Tài xế ${driver.driverId}: cách quán ${dist.toFixed(2)}km`);
-                            
-                            if (dist <= 10) {
-                                io.to(sid).emit('place_order', socketData);
-                                notifiedCount++;
-                            }
+                            console.log(`- Đã nổ đơn cho Tài xế ${driver.driverId} (Cách quán ${dist.toFixed(2)}km)`);
                         } else {
-                            console.log(`- Tài xế ${driver.driverId}: Thiếu tọa độ hợp lệ.`);
+                            console.log(`- Đã nổ đơn cho Tài xế ${driver.driverId} (Chưa rõ vị trí)`);
                         }
                     });
                     
