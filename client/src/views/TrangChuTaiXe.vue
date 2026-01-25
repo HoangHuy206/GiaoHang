@@ -9,7 +9,7 @@ import 'leaflet/dist/leaflet.css'
 import 'leaflet-routing-machine'
 import 'leaflet-routing-machine/dist/leaflet-routing-machine.css'
 import { io } from 'socket.io-client'
-import { SOCKET_URL } from '../config'
+import { SOCKET_URL, API_BASE_URL } from '../config'
 
 // ====== XỬ LÝ DỮ LIỆU & ẢNH ======
 const router = useRouter()
