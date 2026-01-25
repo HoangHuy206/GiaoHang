@@ -193,7 +193,8 @@ const acceptOrder = async () => {
         }
     } catch (err) {
         console.error("Lỗi nhận đơn:", err);
-        alert("Không thể nhận đơn. Có thể đơn đã có người khác nhận hoặc lỗi kết nối.");
+        const errorMsg = err.response?.data?.error || err.message;
+        alert(`Không thể nhận đơn: ${errorMsg}`);
     }
 }
 

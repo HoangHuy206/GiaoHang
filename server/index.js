@@ -328,6 +328,7 @@ app.get('/api/orders', async (req, res) => {
 app.put('/api/orders/:id/status', async (req, res) => {
     const { status, driverId } = req.body;
     const orderId = req.params.id;
+    console.log(`Cập nhật trạng thái đơn #${orderId}: ${status} (Driver: ${driverId})`);
     try {
         let query = 'UPDATE orders SET status = ?';
         let params = [status];
