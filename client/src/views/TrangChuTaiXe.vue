@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import axios from 'axios'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 // @ts-ignore
