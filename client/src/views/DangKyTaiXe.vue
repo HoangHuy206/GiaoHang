@@ -151,8 +151,64 @@ import { useRouter } from 'vue-router';
 import { API_BASE_URL } from '../config';
 // import emailjs from '@emailjs/browser'; // Uncomment if installed
 
-const router = useRouter();
-// ... (rest)
+// Helper trim
+const clean = (v) => (v ?? '').toString().trim();
+
+const handleRegister = async () => {
+  if (isLoading.value) return;
+  isLoading.value = true;
+
+  try {
+    // --- validate frontend ---
+    const u = clean(username.value);
+    const p = clean(password.value);
+    const n = clean(fullName.value);
+    const em = clean(email.value);
+    const ph = clean(phone.value);
+    const id = clean(cccd.value);
+    const addr = clean(address.value);
+    const ve = clean(vehicle.value);
+
+    if (!u || !p || !n) {
+        alert('Vui lòng nhập đủ Tên đăng nhập, Mật khẩu và Họ tên.');
+        isLoading.value = false;
+        return;
+    }
+    if (!em) {
+        alert('Vui lòng nhập Email.');
+        isLoading.value = false;
+        return;
+    }
+    if (ph.length !== 10) {
+        alert('Số điện thoại phải đúng 10 chữ số.');
+        isLoading.value = false;
+        return;
+    }
+    if (id.length !== 12) {
+        alert('CCCD phải đúng 12 chữ số.');
+        isLoading.value = false;
+        return;
+    }
+    if (!addr || !ve) {
+        alert('Vui lòng nhập Nơi ở và Phương tiện.');
+        isLoading.value = false;
+        return;
+    }
+
+    // --- payload gửi lên backend ---
+    const payload = {
+      username: u,
+      password: p,
+      fullName: n,
+      email: em,
+      phone: ph,
+      cccd: id,
+      gender: gender.value,
+      address: addr,
+      vehicle: ve,
+      role: 'driver'
+    };
+
     const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
       method: 'POST',
       headers: {
@@ -167,19 +223,6 @@ const router = useRouter();
     if (!response.ok || !data.success) {
       throw new Error(data.error || 'Lỗi đăng ký');
     }
-
-    // --- gửi email sau khi đăng ký OK (Optional) ---
-    // if (window.emailjs) { ... } or if installed. 
-    // Commented out to avoid errors if pkg missing, but you can enable it.
-    /*
-    const templateParams = {
-      to_name: n,
-      to_email: em,
-      message: `Tài khoản mới: ${u} - Role: Tài xế - Xe: ${ve}`,
-      user_role: 'Tài xế'
-    };
-    // emailjs.send(...) 
-    */
 
     alert('Đăng ký thành công! Bạn có thể đăng nhập ngay.');
     router.push('/login');
