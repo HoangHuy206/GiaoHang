@@ -518,8 +518,8 @@ app.get('/api/like/:userId', async (req, res) => {
     }
 });
 
-// CATCH-ALL ROUTE FOR FRONTEND
-app.get('/:path*', (req, res) => {
+// CATCH-ALL ROUTE FOR FRONTEND (Regex for Express 5)
+app.get(/^(?!\/api).+/, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 
