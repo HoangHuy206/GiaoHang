@@ -10,25 +10,17 @@ import 'leaflet-routing-machine'
 import 'leaflet-routing-machine/dist/leaflet-routing-machine.css'
 import { io } from 'socket.io-client'
 import { SOCKET_URL, API_BASE_URL } from '../config'
+import ChatBox from '../components/ChatBox.vue'
 
 // ====== XỬ LÝ DỮ LIỆU & ẢNH ======
 const router = useRouter()
 const auth = useAuthStore()
-import phoGaImg from '@/assets/img/anhquanan/pho-ga-anh-thu.png'
-import toco from '@/assets/img/anhND/toco.jpg'
-
-// Lấy thông tin người dùng từ store hoặc localStorage
-const userString = localStorage.getItem('user')
-const userInfo = userString ? JSON.parse(userString) : {}
-const userName = ref(userInfo.full_name || userInfo.fullname || userInfo.username || 'Tài xế Pro')
-const userPhone = ref(userInfo.phone || 'Chưa cập nhật')
-const userEmail = ref(userInfo.email || 'Chưa cập nhật')
-
-// ====== TRẠNG THÁI GIAO DIỆN ======
-const isSidebarOpen = ref(true)    
+// ... (some lines)
 const isOnline = ref(false)        
 const currentOrder = ref(null)     
 const isAccepted = ref(false) // Thêm trạng thái đã nhận đơn
+const isChatOpen = ref(false)
+const hasNewMessage = ref(false)
 const driverLocation = ref(null)   
 const currentTab = ref('home') // 'home', 'income', 'inbox', 'profile'
 const myHistory = ref([])
@@ -201,6 +193,7 @@ const acceptOrder = async () => {
         
         // 2. Chuyển sang trạng thái đã nhận đơn
         isAccepted.value = true;
+        socket.emit('join_room', `order_${orderId}`); // Tham gia phòng chat của đơn hàng
         alert("Đã nhận đơn! Vui lòng di chuyển đến quán để lấy hàng.");
         
         // 3. Cập nhật chỉ đường: Từ Tài xế -> Quán ăn (lat_don, lng_don)
@@ -302,6 +295,13 @@ onMounted(() => {
           addShopMarker(data.lat_don, data.lng_don, data.ten_quan, data.hinh_anh_quan);
       }
   });
+
+  socket.on('receive_message', (data) => {
+      if (!isChatOpen.value && currentOrder.value && data.orderId == (currentOrder.value.orderId || currentOrder.value.id)) {
+          hasNewMessage.value = true;
+          notificationSound.play().catch(e => console.log("Lỗi phát âm thanh:", e));
+      }
+  });
 })
 onUnmounted(() => { socket.disconnect() })
 </script>
@@ -322,13 +322,31 @@ onUnmounted(() => { socket.disconnect() })
               <p v-else style="color: #00b14f; font-weight: bold;">ĐANG TRONG ĐƠN HÀNG</p>
             </div>
             
-            <button v-if="!isAccepted" class="toggle-online-btn" @click="toggleConnection" :class="{ 'btn-on': isOnline }">
+            <div v-if="isAccepted" class="w-full flex gap-2">
+              <button class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 relative" 
+                      @click="isChatOpen = !isChatOpen; hasNewMessage = false">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                CHAT VỚI KHÁCH
+                <span v-if="hasNewMessage" class="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>
+              </button>
+              <button class="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold" @click="completeOrder">
+                HOÀN TẤT ĐƠN
+              </button>
+            </div>
+
+            <button v-else class="toggle-online-btn" @click="toggleConnection" :class="{ 'btn-on': isOnline }">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
               {{ isOnline ? 'TẮT KẾT NỐI' : 'BẬT KẾT NỐI' }}
             </button>
-            <button v-else class="toggle-online-btn btn-on" @click="completeOrder">
-              HOÀN TẤT ĐƠN HÀNG (ĐÃ GIAO)
-            </button>
+          </div>
+
+          <!-- Chat Overlay for Driver -->
+          <div v-if="isChatOpen && currentOrder" class="mb-4 animate-in slide-in-from-bottom-4 duration-300">
+             <ChatBox 
+               :order-id="currentOrder.orderId || currentOrder.id" 
+               :current-user="auth.user" 
+               @close="isChatOpen = false"
+             />
           </div>
 
           <!-- Thông báo đơn hàng mới -->

@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router';
 import { computed } from 'vue';
 import CartDrawer from './components/CartDrawer.vue';
 import { cartBus } from './utils/cartBus';
-import AI from './AI/AI.vue';
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -60,13 +59,11 @@ const openCart = () => {
       </div>
     </nav>
     <main>
-      <router-view></router-view>
+      <router-view />
     </main>
-    
-    <AI v-if="$route.path !== '/trangchutaixe'" />
-    <CartDrawer />
   </div>
 </template>
+
 
 <style>
 body, html {

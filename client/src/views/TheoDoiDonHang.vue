@@ -36,11 +36,27 @@
            </div>
         </div>
 
-        <div v-else-if="order.driver_id" class="mb-4 bg-blue-50 p-4 rounded-lg flex items-center gap-4">
-           <div class="w-12 h-12 bg-blue-200 rounded-full flex items-center justify-center text-2xl">🛵</div>
-           <div>
-              <p class="font-bold text-gray-800">Tài xế: {{ order.driver_name }}</p>
-              <p class="text-sm text-gray-600">SĐT: <a :href="`tel:${order.driver_phone}`" class="text-blue-600 font-bold hover:underline">{{ order.driver_phone }}</a></p>
+        <div v-else-if="order.driver_id" class="mb-4 bg-blue-50 p-4 rounded-lg flex flex-col gap-4">
+           <div class="flex items-center gap-4">
+              <div class="w-12 h-12 bg-blue-200 rounded-full flex items-center justify-center text-2xl">🛵</div>
+              <div class="flex-1">
+                 <p class="font-bold text-gray-800">Tài xế: {{ order.driver_name }}</p>
+                 <p class="text-sm text-gray-600">SĐT: <a :href="`tel:${order.driver_phone}`" class="text-blue-600 font-bold hover:underline">{{ order.driver_phone }}</a></p>
+              </div>
+              <button @click="toggleChat(order.id)" 
+                      class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-700 transition shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                Chat
+              </button>
+           </div>
+           
+           <!-- Chat Box Integration -->
+           <div v-if="openChatId === order.id" class="mt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+              <ChatBox 
+                :order-id="order.id" 
+                :current-user="auth.user" 
+                @close="openChatId = null"
+              />
            </div>
         </div>
         <div v-else-if="order.status === 'finding_driver'" class="mb-4 bg-yellow-50 p-4 rounded-lg text-yellow-800 flex items-center gap-2">
@@ -61,11 +77,21 @@ import axios from 'axios';
 import { useAuthStore } from '../stores/auth';
 import { useRouter } from 'vue-router';
 import { API_BASE_URL } from '../config';
+import ChatBox from '../components/ChatBox.vue';
 
 const auth = useAuthStore();
 const router = useRouter();
 const orders = ref([]);
 const loading = ref(true);
+const openChatId = ref(null);
+
+const toggleChat = (orderId) => {
+  if (openChatId.value === orderId) {
+    openChatId.value = null;
+  } else {
+    openChatId.value = orderId;
+  }
+};
 
 const fetchOrders = async () => {
   if (!auth.user) {

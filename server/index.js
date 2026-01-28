@@ -123,12 +123,36 @@ io.on('connection', (socket) => {
         console.log(`Order ${orderData.ma_don_hang} notified to ${driversNotified} drivers within 10km.`);
     });
     
-    // Toggle Driver Status
+    // Handle driver_status_change
     socket.on('driver_status_change', (data) => {
          console.log('Driver status:', data);
          if (data.status === 'offline') {
              onlineDrivers.delete(socket.id);
          }
+    });
+
+    // --- Chat Logic ---
+    socket.on('send_message', async (data) => {
+        // data: { orderId, senderId, content }
+        const { orderId, senderId, content } = data;
+        try {
+            await pool.query(
+                'INSERT INTO messages (order_id, sender_id, content) VALUES (?, ?, ?)',
+                [orderId, senderId, content]
+            );
+            
+            // Broadcast the message to the order room
+            io.to(`order_${orderId}`).emit('receive_message', {
+                orderId,
+                senderId,
+                content,
+                created_at: new Date()
+            });
+
+            console.log(`Message from ${senderId} in order ${orderId}: ${content}`);
+        } catch (err) {
+            console.error('Error saving message:', err);
+        }
     });
 
     socket.on('disconnect', () => {
@@ -298,29 +322,20 @@ app.post('/api/orders', async (req, res) => {
 // Get Orders (Role based)
 app.get('/api/orders', async (req, res) => {
     const { role, userId, shopId } = req.query; // simplified auth
+// ... (rest of existing code)
+});
+
+// Get Messages for an order
+app.get('/api/orders/:id/messages', async (req, res) => {
+    const orderId = req.params.id;
     try {
-        let query = 'SELECT o.*, s.name as shop_name, u.full_name as user_name, d.full_name as driver_name, d.phone as driver_phone FROM orders o JOIN shops s ON o.shop_id = s.id JOIN users u ON o.user_id = u.id LEFT JOIN users d ON o.driver_id = d.id';
-        let params = [];
-
-        if (role === 'user') {
-            query += ' WHERE o.user_id = ?';
-            params.push(userId);
-        } else if (role === 'shop') {
-            // Need to find shop id for this user if not provided, but we'll assume FE sends shopId for now
-             query += ' WHERE o.shop_id = ?';
-             params.push(shopId);
-        } else if (role === 'driver') {
-             // Driver sees available orders (finding_driver) or their own active orders
-             query += ' WHERE (o.status = "finding_driver") OR (o.driver_id = ?)';
-             params.push(userId);
-        }
-        
-        query += ' ORDER BY o.created_at DESC';
-
-        const [orders] = await pool.query(query, params);
-        res.json(orders);
+        const [messages] = await pool.query(
+            'SELECT m.*, u.full_name, u.role FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.order_id = ? ORDER BY m.created_at ASC',
+            [orderId]
+        );
+        res.json(messages);
     } catch (err) {
-         res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -603,6 +618,19 @@ async function checkAndMigrate() {
                 console.log('Migrating: Adding delivery_lng to orders table...');
                 await connection.query('ALTER TABLE orders ADD COLUMN delivery_lng DECIMAL(11, 8)');
             }
+
+            // Check for messages table
+            await connection.query(`
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    order_id INT NOT NULL,
+                    sender_id INT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (order_id) REFERENCES orders(id),
+                    FOREIGN KEY (sender_id) REFERENCES users(id)
+                )
+            `);
         } finally {
             connection.release();
         }
