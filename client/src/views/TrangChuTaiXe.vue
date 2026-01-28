@@ -31,6 +31,8 @@ const currentOrder = ref(null)
 const isAccepted = ref(false) // Thêm trạng thái đã nhận đơn
 const driverLocation = ref(null)   
 const currentTab = ref('home') // 'home', 'income', 'inbox', 'profile'
+const myHistory = ref([])
+const totalIncome = ref(0)
 
 // Âm thanh thông báo
 const notificationSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3')
@@ -40,6 +42,23 @@ const handleLogout = () => {
     auth.logout() // Gọi action logout từ store để xóa state và localStorage
     router.push('/login')
   }
+}
+
+const fetchHistory = async () => {
+    if (!userInfo.id) return;
+    try {
+        const res = await axios.get(`${API_BASE_URL}/api/orders`, { 
+            params: { role: 'driver', userId: userInfo.id } 
+        });
+        // Lọc đơn đã giao thành công
+        const delivered = res.data.filter(o => o.status === 'delivered');
+        myHistory.value = delivered;
+        
+        // Tính tổng thu nhập (Giả sử 20% giá trị đơn)
+        totalIncome.value = delivered.reduce((sum, order) => sum + (order.total_price * 0.2), 0);
+    } catch (error) {
+        console.error("Lỗi tải lịch sử:", error);
+    }
 }
 
 // ====== CẤU HÌNH SOCKET ======
@@ -200,6 +219,37 @@ const acceptOrder = async () => {
     }
 }
 
+const completeOrder = async () => {
+    if (!currentOrder.value) return;
+    if(!confirm("Xác nhận đã giao hàng thành công tới khách?")) return;
+
+    try {
+        const orderId = currentOrder.value.orderId || currentOrder.value.id;
+        await axios.put(`${API_BASE_URL}/api/orders/${orderId}/status`, { 
+            status: 'delivered',
+            driverId: userInfo.id
+        });
+
+        alert("Giao hàng thành công! Tiền đã cộng vào ví.");
+        
+        // Reset state
+        isAccepted.value = false;
+        currentOrder.value = null;
+        clearShopMarkers();
+        if(routingControl){
+            map.removeControl(routingControl);
+            routingControl = null;
+        }
+
+        // Refresh income history
+        fetchHistory();
+
+    } catch (err) {
+        console.error("Lỗi hoàn tất đơn:", err);
+        alert("Có lỗi xảy ra khi hoàn tất đơn.");
+    }
+}
+
 const ignoreOrder = () => {
     currentOrder.value = null
     if (routingControl) {
@@ -210,7 +260,14 @@ const ignoreOrder = () => {
 }
 
 onMounted(() => { 
+  // Kiểm tra đăng nhập ngay khi vào trang
+  if (!localStorage.getItem('user')) {
+    router.push('/login');
+    return;
+  }
+
   initMap() 
+  fetchHistory() // Tải lịch sử ban đầu
 
   // Lắng nghe cập nhật trạng thái đơn hàng (ví dụ: Shop xác nhận đã lấy hàng)
   socket.on('status_update', (data) => {
@@ -269,8 +326,8 @@ onUnmounted(() => { socket.disconnect() })
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
               {{ isOnline ? 'TẮT KẾT NỐI' : 'BẬT KẾT NỐI' }}
             </button>
-            <button v-else class="toggle-online-btn btn-on" @click="isAccepted = false; currentOrder = null; clearShopMarkers(); if(routingControl){map.removeControl(routingControl); routingControl=null;}">
-              HOÀN TẤT ĐƠN HÀNG
+            <button v-else class="toggle-online-btn btn-on" @click="completeOrder">
+              HOÀN TẤT ĐƠN HÀNG (ĐÃ GIAO)
             </button>
           </div>
 
@@ -297,6 +354,40 @@ onUnmounted(() => { socket.disconnect() })
                   <button class="accept-btn" @click="acceptOrder">CHẤP NHẬN</button>
               </div>
           </div>
+        </div>
+      </div>
+
+      <!-- INCOME VIEW -->
+      <div v-if="currentTab === 'income'" class="income-view">
+        <div class="income-header">
+            <h2>Tổng Thu Nhập</h2>
+            <p class="income-amount">{{ new Intl.NumberFormat('vi-VN').format(totalIncome) }}đ</p>
+        </div>
+        
+        <div class="history-list">
+            <h3 class="section-title">Lịch sử chuyến đi</h3>
+            <div v-if="myHistory.length === 0" class="no-history">Chưa có chuyến đi nào.</div>
+            <div v-else class="history-item" v-for="h in myHistory" :key="h.id">
+                <div class="history-top">
+                    <span class="date">{{ new Date(h.created_at).toLocaleDateString('vi-VN') }}</span>
+                    <span class="price text-green-600 font-bold">+{{ new Intl.NumberFormat('vi-VN').format(h.total_price * 0.2) }}đ</span>
+                </div>
+                <div class="route-info">
+                    <div class="point from">
+                        <div class="dot green"></div>
+                        <p class="address">{{ h.shop_address || h.shop_name }}</p>
+                    </div>
+                    <div class="line-connect"></div>
+                    <div class="point to">
+                        <div class="dot red"></div>
+                        <p class="address">{{ h.delivery_address }}</p>
+                    </div>
+                </div>
+                <div class="order-meta">
+                    <span>Đơn: #{{ h.id }}</span>
+                    <span>Tổng: {{ new Intl.NumberFormat('vi-VN').format(h.total_price) }}đ</span>
+                </div>
+            </div>
         </div>
       </div>
 
@@ -331,10 +422,6 @@ onUnmounted(() => { socket.disconnect() })
       </div>
 
       <!-- OTHER VIEWS -->
-      <div v-if="currentTab === 'income'" class="placeholder-view">
-        <h2>Thu nhập của bạn</h2>
-        <p>Tính năng đang cập nhật...</p>
-      </div>
       <div v-if="currentTab === 'inbox'" class="placeholder-view">
          <h2>Hộp thư</h2>
          <p>Chưa có thông báo nào.</p>
@@ -519,15 +606,66 @@ onUnmounted(() => { socket.disconnect() })
 }
 .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 
-/* Profile View */
-.profile-view, .placeholder-view {
+/* Profile View & Income View */
+.profile-view, .placeholder-view, .income-view {
   flex: 1;
   background: #f4f6f8;
   padding: 20px;
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
 }
+
+/* INCOME Styles */
+.income-header {
+    background: #00b14f;
+    width: 100%;
+    max-width: 500px;
+    border-radius: 15px;
+    padding: 30px;
+    color: white;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,177,79, 0.3);
+    margin-bottom: 25px;
+}
+.income-header h2 { margin: 0; font-size: 16px; opacity: 0.9; }
+.income-amount { font-size: 32px; font-weight: 800; margin: 10px 0 0; }
+
+.history-list {
+    width: 100%;
+    max-width: 500px;
+}
+.section-title { font-size: 16px; font-weight: 700; color: #333; margin-bottom: 15px; }
+.no-history { text-align: center; color: #888; padding: 20px; }
+
+.history-item {
+    background: white;
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.history-top { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; color: #555; }
+.route-info {
+    position: relative;
+    padding-left: 20px;
+    border-left: 2px dashed #ddd;
+    margin-left: 5px;
+}
+.point { position: relative; margin-bottom: 10px; }
+.point .dot { 
+    position: absolute; left: -26px; top: 4px; 
+    width: 10px; height: 10px; border-radius: 50%; 
+}
+.dot.green { background: #00b14f; }
+.dot.red { background: #ff4757; }
+.address { font-size: 14px; font-weight: 600; color: #333; margin: 0; }
+.order-meta { 
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; 
+    display: flex; justify-content: space-between; font-size: 12px; color: #888; 
+}
+
 
 .profile-card {
   background: white;
@@ -539,7 +677,7 @@ onUnmounted(() => { socket.disconnect() })
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 40px;
+  margin-top: 10px;
 }
 
 .avatar-circle {

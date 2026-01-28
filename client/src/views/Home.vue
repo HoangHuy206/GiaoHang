@@ -233,7 +233,7 @@ watch(isMenuOpen, (open) => {
         </div>
       </div>
       
-      <div class="footer-bottom">
+      <div class="footer-bottom" >
         <p>Theo dõi chúng tôi @2026 </p>
       </div>
     </div>

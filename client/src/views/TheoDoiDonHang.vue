@@ -28,7 +28,15 @@
         </div>
 
         <!-- Driver Info -->
-        <div v-if="order.driver_id" class="mb-4 bg-blue-50 p-4 rounded-lg flex items-center gap-4">
+        <div v-if="order.status === 'delivered'" class="mb-4 bg-green-50 p-4 rounded-lg flex items-center gap-4 border border-green-200">
+           <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-2xl">✅</div>
+           <div>
+              <p class="font-bold text-green-800">Giao hàng thành công!</p>
+              <p class="text-sm text-green-700">Chúc bạn ngon miệng. Cảm ơn đã sử dụng dịch vụ.</p>
+           </div>
+        </div>
+
+        <div v-else-if="order.driver_id" class="mb-4 bg-blue-50 p-4 rounded-lg flex items-center gap-4">
            <div class="w-12 h-12 bg-blue-200 rounded-full flex items-center justify-center text-2xl">🛵</div>
            <div>
               <p class="font-bold text-gray-800">Tài xế: {{ order.driver_name }}</p>

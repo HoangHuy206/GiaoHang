@@ -87,6 +87,8 @@ const restaurants = ref([
   { id: 7, name: "Mixue", type: "đồ uống", rating: 4.9, time: "30 phút", distance: "4.4 km", promo: "Giảm 15.000đ", image: new URL('@/assets/img/anhND/mixue.jpg', import.meta.url).href, isFavorite: false },
 ])
 
+const allProducts = ref([])
+
 // --- HÀM LẤY USER TỪ LOCALSTORAGE ---
 const getCurrentUser = () => {
     const userStr = localStorage.getItem('user'); // Fixed: user instead of userLogin
@@ -97,6 +99,14 @@ const getCurrentUser = () => {
 onMounted(async () => {
   timer = setInterval(nextSlide, 4000)
   
+  try {
+      // Fetch all products for search
+      const prodRes = await axios.get(`${API_BASE_URL}/api/products`);
+      allProducts.value = prodRes.data;
+  } catch (error) {
+      console.error("Lỗi tải danh sách món ăn:", error);
+  }
+
   // --- LOGIC MỚI: ĐỒNG BỘ TRÁI TIM TỪ DATABASE ---
   const currentUser = getCurrentUser();
   if (currentUser && currentUser.id) { // Fixed: id instead of account_id
@@ -143,6 +153,11 @@ const toggleFavorite = async (res) => {
 const filteredRestaurants = computed(() => {
   if (!searchQuery.value.trim()) return restaurants.value
   return restaurants.value.filter(res => res.name.toLowerCase().includes(searchQuery.value.toLowerCase()))
+})
+
+const filteredFoods = computed(() => {
+  if (!searchQuery.value.trim()) return [];
+  return allProducts.value.filter(p => p.name.toLowerCase().includes(searchQuery.value.toLowerCase()));
 })
 </script>
 
@@ -207,7 +222,7 @@ const filteredRestaurants = computed(() => {
             <p class="greeting">Xin Chào Bạn</p>
             <h1 class="title">Chúng tôi nên giao thức ăn của bạn ở đâu hôm nay?</h1>
             <div class="input-group">
-              <input v-model="searchQuery" type="text" class="inp-find" placeholder="Nhập Quán bạn muốn tìm..." />
+              <input v-model="searchQuery" type="text" class="inp-find" placeholder="Nhập Quán hoặc Món ăn bạn muốn tìm..." />
               <button class="btn-find">Tìm kiếm</button>
             </div>
           </div>
@@ -216,7 +231,25 @@ const filteredRestaurants = computed(() => {
     </main>
 
     <section class="restaurant-container">
-      <h2 class="title-section">Ưu đãi Giao Hàng Tận Nơi tại <span class="green-text">Hà Nội</span></h2>
+      <!-- FOUND DISHES SECTION -->
+      <div v-if="searchQuery && filteredFoods.length > 0" class="mb-10">
+          <h2 class="title-section">Món ăn tìm thấy</h2>
+          <div class="food-grid">
+              <router-link v-for="food in filteredFoods" :key="food.id" :to="'/restaurant/' + food.shop_id" class="food-card">
+                  <div class="food-img-box">
+                      <img :src="getImageUrl(food.image_url)" alt="food">
+                  </div>
+                  <div class="food-info">
+                      <h4 class="food-name">{{ food.name }}</h4>
+                      <p class="food-price">{{ new Intl.NumberFormat('vi-VN').format(food.price) }}đ</p>
+                      <p class="shop-name">Tại: {{ food.shop_name }}</p>
+                  </div>
+              </router-link>
+          </div>
+          <div class="separator"></div>
+      </div>
+
+      <h2 class="title-section" style="margin-bottom: 30px;">Ưu đãi Giao Hàng Tận Nơi tại <span class="green-text">Hà Nội</span></h2>
       <div class="restaurant-grid">
         <div v-for="res in filteredRestaurants" :key="res.id" class="restaurant-card-wrapper">
           <router-link :to="'/restaurant/' + res.id" class="restaurant-card">
@@ -294,7 +327,7 @@ const filteredRestaurants = computed(() => {
 
 .search-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; padding-left: 80px; pointer-events: none; }
 .search-box { background: white; padding: 40px; border-radius: 8px; width: 450px; pointer-events: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-.inp-find { width: 70%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+.inp-find { width: 95%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 20px; margin-top: 10px; }
 .btn-find { padding: 10px 20px; background: #00b14f; color: white; border: none; border-radius: 4px; margin-left: 10px; cursor: pointer; }
 
 .restaurant-container { padding: 40px 80px; max-width: 1400px; margin: 0 auto; }
@@ -416,4 +449,68 @@ const filteredRestaurants = computed(() => {
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 .slide-up-enter-active, .slide-up-leave-active { transition: all 0.3s ease-out; }
 .slide-up-enter-from, .slide-up-leave-to { transform: translateY(20px); opacity: 0; }
+
+/* Food Search Styles */
+.food-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+.food-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+    overflow: hidden;
+    border: 1px solid #eee;
+}
+.food-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-color: #00b14f;
+}
+.food-img-box {
+    width: 100%;
+    height: 150px;
+    overflow: hidden;
+    background: #f9f9f9;
+}
+.food-img-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.food-info {
+    padding: 12px;
+}
+.food-name {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #333;
+}
+.food-price {
+    font-size: 15px;
+    font-weight: bold;
+    color: #00b14f;
+    margin-bottom: 5px;
+}
+.shop-name {
+    font-size: 13px;
+    color: #888;
+    display: flex;
+    align-items: center;
+}
+.separator {
+    height: 1px;
+    background: #e0e0e0;
+    margin: 30px 0;
+}
 </style>

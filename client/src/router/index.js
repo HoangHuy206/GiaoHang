@@ -22,12 +22,12 @@ const routes = [
   { path: '/dangkytaixe', component: DangKyTaiXe, meta: { title: 'Đăng ký tài xế ' } },
   { path: '/food', component: Food, meta: { title: 'Đồ ăn' }  },
   { path: '/restaurant/:id', component: Restaurant , meta: { title: 'Nhà hàng' }  },
-  { path: '/giohang', component: GioHang , meta: { title: 'Giỏ Hàng' } },
-  { path: '/theodoidonhang', component: TheoDoiDonHang, meta: { title: 'Theo dõi đơn hàng' } },
-  { path: '/thanhtoan', component: ThanhToan, meta: { title: 'Thanh toán' } },
-  { path: '/trangchutaixe', component: TrangChuTaiXe, meta: { title: 'Trang chủ tài xế' } }, 
-  { path: '/shop-admin', component: ShopDashboard, meta: { title: 'Shop' } }, 
-  { path: '/profile', component: Profile, meta: { title: 'Tang cá nhân' } },
+  { path: '/giohang', component: GioHang , meta: { title: 'Giỏ Hàng', requiresAuth: true } },
+  { path: '/theodoidonhang', component: TheoDoiDonHang, meta: { title: 'Theo dõi đơn hàng', requiresAuth: true } },
+  { path: '/thanhtoan', component: ThanhToan, meta: { title: 'Thanh toán', requiresAuth: true } },
+  { path: '/trangchutaixe', component: TrangChuTaiXe, meta: { title: 'Trang chủ tài xế', requiresAuth: true } }, 
+  { path: '/shop-admin', component: ShopDashboard, meta: { title: 'Shop', requiresAuth: true } }, 
+  { path: '/profile', component: Profile, meta: { title: 'Trang cá nhân', requiresAuth: true } },
   { path: '/:pathMatch(.*)*', component: PageNotFound, meta: { title: '404 - Không tìm thấy trang' } },
 ];
 
@@ -38,7 +38,16 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   document.title = to.meta.title || 'Giao Hàng Tận Nơi';
-  next();
+
+  const user = localStorage.getItem('user');
+
+  if (to.meta.requiresAuth && !user) {
+    // Nếu trang yêu cầu đăng nhập mà chưa có user -> chuyển về login
+    alert("Bạn cần đăng nhập để truy cập trang này!");
+    next('/login');
+  } else {
+    next();
+  }
 });
 
 export default router;
