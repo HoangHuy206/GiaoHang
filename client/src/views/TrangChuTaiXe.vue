@@ -13,10 +13,38 @@ import { SOCKET_URL, API_BASE_URL } from '../config'
 import ChatBox from '../components/ChatBox.vue'
 
 // ====== XỬ LÝ DỮ LIỆU & ẢNH ======
+
 const router = useRouter()
+
 const auth = useAuthStore()
-// ... (some lines)
-const isOnline = ref(false)        
+
+import phoGaImg from '@/assets/img/anhquanan/pho-ga-anh-thu.png'
+
+import toco from '@/assets/img/anhND/toco.jpg'
+
+
+
+// Lấy thông tin người dùng từ store hoặc localStorage
+
+const userString = localStorage.getItem('user')
+
+const userInfo = userString ? JSON.parse(userString) : {}
+
+const userName = ref(userInfo.full_name || userInfo.fullname || userInfo.username || 'Tài xế Pro')
+
+const userPhone = ref(userInfo.phone || 'Chưa cập nhật')
+
+const userEmail = ref(userInfo.email || 'Chưa cập nhật')
+
+
+
+// ====== TRẠNG THÁI GIAO DIỆN ======
+
+const isSidebarOpen = ref(true)    
+
+const isOnline = ref(false)
+
+        
 const currentOrder = ref(null)     
 const isAccepted = ref(false) // Thêm trạng thái đã nhận đơn
 const isChatOpen = ref(false)
@@ -150,9 +178,6 @@ const toggleConnection = () => {
       driverLocation.value = { lat: latitude, lng: longitude }
       updateDriverMarker(latitude, longitude)
       
-      console.log("Vị trí hiện tại của tài xế:", latitude, longitude);
-
-      // Gửi vị trí lên server để tính bán kính 10km
       socket.emit('update_driver_location', {
           driverId: userInfo.id,
           lat: latitude,
@@ -160,11 +185,6 @@ const toggleConnection = () => {
       })
     }, (err) => {
         console.error("Lỗi lấy vị trí:", err);
-        let msg = "Không thể lấy vị trí của bạn. ";
-        if (err.code === 1) msg += "Vui lòng cho phép quyền truy cập vị trí trên trình duyệt.";
-        else if (err.code === 2) msg += "Vị trí không khả dụng.";
-        else msg += "Lỗi kết nối định vị.";
-        alert(msg);
     }, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 })
   } else {
     socket.emit('driver_status_change', { status: 'offline', driverId: userInfo.id })
