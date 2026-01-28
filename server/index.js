@@ -8,9 +8,13 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const nodemailer = require('nodemailer');
+const compression = require('compression');
 
 const app = express();
 const server = http.createServer(app);
+
+// Use compression to reduce file sizes sent over the network
+app.use(compression());
 
 // --- Email Config ---
 const transporter = nodemailer.createTransport({
@@ -67,11 +71,20 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// Serve static files from uploads
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Serve static files from uploads with caching
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+    maxAge: '1d',
+    etag: true
+}));
 
-// Serve Frontend static files (Production)
-app.use(express.static(path.join(__dirname, '../client/dist')));
+// Serve Frontend static files (Production) with caching
+app.use(express.static(path.join(__dirname, '../client/dist'), {
+    maxAge: '1h',
+    etag: true
+}));
+
+// Add a simple health check route
+app.get('/api/health', (req, res) => res.send('OK'));
 
 // --- Socket.io Logic ---
 io.on('connection', (socket) => {
@@ -321,8 +334,47 @@ app.post('/api/orders', async (req, res) => {
 
 // Get Orders (Role based)
 app.get('/api/orders', async (req, res) => {
-    const { role, userId, shopId } = req.query; // simplified auth
-// ... (rest of existing code)
+    const { role, userId, shopId } = req.query;
+    try {
+        let query = '';
+        let params = [];
+
+        if (role === 'user') {
+            query = `
+                SELECT o.*, s.name as shop_name, u.full_name as driver_name, u.phone as driver_phone
+                FROM orders o
+                JOIN shops s ON o.shop_id = s.id
+                LEFT JOIN users u ON o.driver_id = u.id
+                WHERE o.user_id = ?
+                ORDER BY o.created_at DESC`;
+            params = [userId];
+        } else if (role === 'driver') {
+            query = `
+                SELECT o.*, s.name as shop_name, s.address as shop_address, u.full_name as user_name
+                FROM orders o
+                JOIN shops s ON o.shop_id = s.id
+                JOIN users u ON o.user_id = u.id
+                WHERE o.driver_id = ? OR o.status = 'finding_driver'
+                ORDER BY o.created_at DESC`;
+            params = [userId];
+        } else if (role === 'shop') {
+            query = `
+                SELECT o.*, u.full_name as user_name, d.full_name as driver_name
+                FROM orders o
+                JOIN users u ON o.user_id = u.id
+                LEFT JOIN users d ON o.driver_id = d.id
+                WHERE o.shop_id = ?
+                ORDER BY o.created_at DESC`;
+            params = [shopId];
+        } else {
+            return res.status(400).json({ error: 'Invalid role' });
+        }
+
+        const [rows] = await pool.query(query, params);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Get Messages for an order

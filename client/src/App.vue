@@ -61,6 +61,8 @@ const openCart = () => {
     <main>
       <router-view />
     </main>
+    <!-- Add CartDrawer here so it exists globally -->
+    <CartDrawer />
   </div>
 </template>
 

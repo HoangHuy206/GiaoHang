@@ -104,6 +104,11 @@ const addToCart = (product) => {
     }
 
     // Use event bus for new CartDrawer
-    cartBus.emit('add-to-cart', { ...product, shopId: shop.value.id });
+    // Ensure the ID is passed as 'id' which CartDrawer expects
+    cartBus.emit('add-to-cart', { 
+        ...product, 
+        id: product.id, 
+        shopId: shop.value.id 
+    });
 };
 </script>
