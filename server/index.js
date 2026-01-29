@@ -397,7 +397,8 @@ app.get('/api/orders', async (req, res) => {
             params = [userId];
         } else if (role === 'shop') {
             query = `
-                SELECT o.*, u.full_name as user_name, d.full_name as driver_name
+                SELECT o.*, u.full_name as user_name, d.full_name as driver_name,
+                       (SELECT p.image_url FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_image
                 FROM orders o
                 JOIN users u ON o.user_id = u.id
                 LEFT JOIN users d ON o.driver_id = d.id

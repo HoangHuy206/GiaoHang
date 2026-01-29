@@ -1,17 +1,18 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { cartBus } from '../utils/cartBus';
 
 const props = defineProps({
-  showMenuButton: { type: Boolean, default: false }
+  showMenuButton: { type: Boolean, default: true } // Default to true to show menu on mobile
 });
 
 const emit = defineEmits(['toggle-menu']);
 
 const auth = useAuthStore();
 const router = useRouter();
+const isMobileMenuOpen = ref(false); // Local state for mobile menu
 
 const homeLink = computed(() => {
   if (!auth.user) return '/';
@@ -21,6 +22,11 @@ const homeLink = computed(() => {
 });
 
 const isDriver = computed(() => auth.user?.role === 'driver');
+
+const toggleMobileMenu = () => {
+  isMobileMenuOpen.value = !isMobileMenuOpen.value;
+  emit('toggle-menu'); // Keep emitting for parents that use it (like Food.vue)
+};
 
 const logout = () => {
   auth.logout();
@@ -36,9 +42,9 @@ const openCart = () => {
   <header class="unified-header">
     <div class="header-inner">
       <div class="header-left">
-        <!-- Nút menu chỉ hiện nếu trang đó yêu cầu (như Home/Food) và không phải tài xế -->
-        <button v-if="showMenuButton && !isDriver" class="menu-btn" @click="emit('toggle-menu')">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Nút menu hamburger -->
+        <button class="menu-btn md:hidden" @click="toggleMobileMenu">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -51,17 +57,16 @@ const openCart = () => {
         </router-link>
       </div>
 
-      <nav class="header-nav" v-if="!isDriver">
+      <!-- Desktop Nav -->
+      <nav class="header-nav hidden md:flex" v-if="!isDriver">
         <router-link :to="homeLink" class="nav-link">Trang chủ</router-link>
         
-        <!-- Điều hướng cho Khách hàng -->
         <template v-if="!auth.user || auth.user.role === 'user'">
           <router-link to="/food" class="nav-link">Đặt món</router-link>
           <router-link to="/theodoidonhang" class="nav-link" v-if="auth.user">Đơn hàng</router-link>
           <router-link to="/hotro" class="nav-link">Hỗ Trợ</router-link>
         </template>
 
-        <!-- Điều hướng cho Chủ quán (Shop) -->
         <template v-else-if="auth.user.role === 'shop'">
           <router-link to="/shop-stats" class="nav-link">Thống kê</router-link>
         </template>
@@ -89,10 +94,27 @@ const openCart = () => {
               </div>
             </router-link>
             
-            <button @click="logout" class="logout-btn">Đăng xuất</button>
+            <button @click="logout" class="logout-btn hidden md:block">Đăng xuất</button>
           </div>
         </template>
       </div>
+    </div>
+
+    <!-- Mobile Menu Overlay -->
+    <div v-if="isMobileMenuOpen && !isDriver" class="absolute top-full left-0 w-full bg-white shadow-lg border-t z-50 flex flex-col p-4 md:hidden">
+        <router-link :to="homeLink" class="mobile-link" @click="isMobileMenuOpen = false">Trang chủ</router-link>
+        
+        <template v-if="!auth.user || auth.user.role === 'user'">
+          <router-link to="/food" class="mobile-link" @click="isMobileMenuOpen = false">Đặt món</router-link>
+          <router-link to="/theodoidonhang" class="mobile-link" v-if="auth.user" @click="isMobileMenuOpen = false">Đơn hàng</router-link>
+          <router-link to="/hotro" class="mobile-link" @click="isMobileMenuOpen = false">Hỗ Trợ</router-link>
+        </template>
+
+        <template v-else-if="auth.user.role === 'shop'">
+          <router-link to="/shop-stats" class="mobile-link" @click="isMobileMenuOpen = false">Thống kê</router-link>
+        </template>
+
+        <button @click="logout" class="mobile-link text-red-500 border-t mt-2 pt-2">Đăng xuất</button>
     </div>
   </header>
 </template>
@@ -142,6 +164,16 @@ const openCart = () => {
 .avatar-circle { width: 28px; height: 28px; background: #2c7a3f; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; }
 .logout-btn { background: #ff4757; color: white; border: none; padding: 6px clamp(10px, 1.5vw, 15px); border-radius: 8px; cursor: pointer; font-weight: bold; font-size: clamp(11px, 1.2vw, 13px); transition: 0.2s; }
 .logout-btn:hover { background: #ff2e44; }
+
+.mobile-link {
+  display: block;
+  padding: 12px 0;
+  font-weight: 600;
+  color: #333;
+  text-decoration: none;
+  border-bottom: 1px solid #f0f0f0;
+}
+.mobile-link:last-child { border-bottom: none; }
 
 @media (max-width: 768px) {
   .header-nav { display: none; }

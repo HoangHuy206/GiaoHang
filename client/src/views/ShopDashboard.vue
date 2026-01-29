@@ -12,12 +12,18 @@
 
        <div v-for="order in orders" :key="order.id" class="bg-white rounded-lg shadow-md overflow-hidden border-l-4" :class="getBorderColor(order.status)">
            <div class="p-4 flex justify-between items-start">
-               <div>
-                   <h3 class="font-bold text-lg">Đơn #{{ order.id }} - {{ order.user_name }}</h3>
-                   <p class="text-sm text-gray-600">{{ new Date(order.created_at).toLocaleString() }}</p>
-                   <p class="mt-2 font-bold text-red-600">Tổng: {{ formatPrice(order.total_price) }}</p>
-                   <p class="text-sm mt-1">Giao đến: {{ order.delivery_address }}</p>
-                   <p class="text-sm mt-1 font-semibold text-blue-600">Trạng thái: {{ formatStatus(order.status) }}</p>
+               <div class="flex gap-4">
+                   <!-- Product Image -->
+                   <div class="w-16 h-16 rounded-lg overflow-hidden border border-gray-200 shrink-0">
+                       <img :src="getImageUrl(order.first_product_image)" alt="Product" class="w-full h-full object-cover">
+                   </div>
+                   <div>
+                       <h3 class="font-bold text-lg">Đơn #{{ order.id }} - {{ order.user_name }}</h3>
+                       <p class="text-sm text-gray-600">{{ new Date(order.created_at).toLocaleString() }}</p>
+                       <p class="mt-2 font-bold text-red-600">Tổng: {{ formatPrice(order.total_price) }}</p>
+                       <p class="text-sm mt-1">Giao đến: {{ order.delivery_address }}</p>
+                       <p class="text-sm mt-1 font-semibold text-blue-600">Trạng thái: {{ formatStatus(order.status) }}</p>
+                   </div>
                </div>
                <div class="flex flex-col space-y-2">
                    <!-- Flow: Pending -> (Shop Confirms) -> Finding Driver -> (Driver Accepts) -> Driver Assigned -> (Shop Confirms Pickup) -> Picked Up -> Delivered -->
@@ -52,6 +58,12 @@ const auth = useAuthStore();
 const orders = ref([]);
 const loading = ref(true);
 const socket = io(SOCKET_URL);
+
+const getImageUrl = (url) => {
+    if (!url) return 'https://cdn-icons-png.flaticon.com/512/706/706164.png';
+    if (url.startsWith('http')) return url;
+    return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 
 const fetchOrders = async () => {
     try {
