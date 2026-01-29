@@ -17,7 +17,10 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-24">
-      <div v-for="product in filteredProducts" :key="product.id" class="bg-white p-4 rounded-xl shadow border border-gray-100 flex justify-between items-center group hover:border-green-400 transition">
+      <div v-for="product in filteredProducts" :key="product.id" 
+           :id="`product-${product.id}`"
+           :class="{'highlight-product': product.id == route.query.highlight}"
+           class="bg-white p-4 rounded-xl shadow border border-gray-100 flex justify-between items-center group hover:border-green-400 transition">
         <img :src="getImageUrl(product.image_url)" alt="" class="w-20 h-20 rounded-lg object-cover mr-4 shadow-sm bg-gray-200">
         <div class="flex-1">
             <h3 class="font-bold text-lg text-gray-800 group-hover:text-green-700 transition">{{ product.name }}</h3>
@@ -43,11 +46,22 @@
     from { transform: translateY(100%); }
     to { transform: translateY(0); }
 }
+
+@keyframes flashHighlight {
+    0% { background-color: rgba(34, 197, 94, 0.2); border-color: #22c55e; box-shadow: 0 0 15px rgba(34, 197, 94, 0.5); }
+    50% { background-color: rgba(34, 197, 94, 0.05); border-color: transparent; box-shadow: none; }
+    100% { background-color: rgba(34, 197, 94, 0.2); border-color: #22c55e; box-shadow: 0 0 15px rgba(34, 197, 94, 0.5); }
+}
+
+.highlight-product {
+    animation: flashHighlight 1.5s ease-in-out 3; /* Blinks 3 times */
+    border: 2px solid #22c55e !important;
+}
 </style>
 
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import StandardHeader from '../components/StandardHeader.vue';
 import { useAuthStore } from '../stores/auth';
@@ -68,6 +82,15 @@ onMounted(async () => {
         const res = await axios.get(`${API_BASE_URL}/api/shops/${route.params.id}`);
         shop.value = res.data;
         products.value = res.data.products;
+
+        // Check for highlight
+        if (route.query.highlight) {
+            await nextTick();
+            const el = document.getElementById(`product-${route.query.highlight}`);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
     } catch (error) {
         console.error(error);
     }

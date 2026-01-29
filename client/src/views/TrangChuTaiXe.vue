@@ -56,6 +56,25 @@ const myHistory = ref([])
 const totalIncome = ref(0)
 const fileInput = ref(null)
 
+// Driver Stats
+const driverStats = ref({
+    averageRating: 5,
+    totalReviews: 0
+});
+
+const fetchDriverStats = async () => {
+    if (!auth.user?.id) return;
+    try {
+        const res = await axios.get(`${API_BASE_URL}/api/users/${auth.user.id}/reviews`);
+        driverStats.value = {
+            averageRating: Number(res.data.averageRating) || 5,
+            totalReviews: res.data.totalReviews || 0
+        };
+    } catch (e) {
+        console.error('Lỗi tải đánh giá:', e);
+    }
+};
+
 // Hàm xử lý đường dẫn ảnh đại diện
 const getAvatarUrl = (path) => {
     if (!path) return '';
@@ -336,6 +355,7 @@ onMounted(() => {
 
   initMap() 
   fetchHistory() // Tải lịch sử ban đầu
+  fetchDriverStats() // Tải đánh giá
 
   // Lắng nghe cập nhật trạng thái đơn hàng (ví dụ: Shop xác nhận đã lấy hàng)
   socket.on('status_update', (data) => {
@@ -502,6 +522,16 @@ onUnmounted(() => { socket.disconnect() })
             
             <h2>{{ auth.user?.full_name || auth.user?.username }}</h2>
             <p class="role-badge">Tài xế đối tác chuyên nghiệp</p>
+
+            <!-- Driver Rating Stats -->
+            <div class="flex items-center gap-2 mt-3 bg-yellow-50 px-4 py-2 rounded-full border border-yellow-200">
+               <div class="flex text-yellow-500 text-lg">
+                  <span v-for="i in 5" :key="i">{{ i <= Math.round(driverStats.averageRating) ? '⭐' : '☆' }}</span>
+               </div>
+               <span class="text-sm font-bold text-gray-700">
+                  {{ driverStats.averageRating.toFixed(1) }} ({{ driverStats.totalReviews }} đánh giá)
+               </span>
+            </div>
           </div>
           
           <div class="profile-info-list">

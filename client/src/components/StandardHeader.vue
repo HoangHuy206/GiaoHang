@@ -54,6 +54,7 @@ const openCart = () => {
       <nav class="header-nav" v-if="!isDriver">
         <router-link :to="homeLink" class="nav-link">Trang chủ</router-link>
         <router-link to="/food" class="nav-link">Đặt món</router-link>
+        <router-link to="/theodoidonhang" class="nav-link" v-if="auth.user && auth.user.role === 'user'">Đơn hàng</router-link>
         <router-link to="/hotro" class="nav-link">Hỗ Trợ</router-link>
       </nav>
 

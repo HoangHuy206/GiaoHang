@@ -111,29 +111,10 @@ io.on('connection', (socket) => {
 
     // Handle new order placement from client
     socket.on('place_order', (orderData) => {
-        console.log('New order received, finding nearby drivers:', orderData.ma_don_hang);
-        
-        const shopLat = orderData.lat_don;
-        const shopLng = orderData.lng_don;
-
-        if (!shopLat || !shopLng) {
-            console.log('Order missing shop coordinates, broadcasting to all.');
-            io.emit('place_order', orderData);
-            return;
-        }
-
-        let driversNotified = 0;
-        onlineDrivers.forEach((driver, socketId) => {
-            const distance = calculateDistance(shopLat, shopLng, driver.lat, driver.lng);
-            console.log(`Driver ${driver.driverId} distance: ${distance.toFixed(2)}km`);
-            
-            if (distance <= 10) { // 10km radius
-                io.to(socketId).emit('place_order', orderData);
-                driversNotified++;
-            }
-        });
-
-        console.log(`Order ${orderData.ma_don_hang} notified to ${driversNotified} drivers within 10km.`);
+        console.log('New order received, notifying shop:', orderData.shop_id);
+        // Only notify the shop initially. 
+        // Drivers are notified when Shop confirms (status -> finding_driver)
+        io.to(`shop_${orderData.shop_id}`).emit('new_order', orderData);
     });
     
     // Handle driver_status_change
@@ -355,13 +336,16 @@ app.get('/api/orders', async (req, res) => {
 
         if (role === 'user') {
             query = `
-                SELECT o.*, s.name as shop_name, u.full_name as driver_name, u.phone as driver_phone
+                SELECT o.*, s.name as shop_name, u.full_name as driver_name, u.phone as driver_phone,
+                       (SELECT p.image_url FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_image,
+                       (SELECT p.id FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_id,
+                       (SELECT COUNT(*) FROM reviews r WHERE r.order_id = o.id AND r.user_id = ?) > 0 as is_completed_by_user
                 FROM orders o
                 JOIN shops s ON o.shop_id = s.id
                 LEFT JOIN users u ON o.driver_id = u.id
                 WHERE o.user_id = ?
                 ORDER BY o.created_at DESC`;
-            params = [userId];
+            params = [userId, userId];
         } else if (role === 'driver') {
             query = `
                 SELECT o.*, s.name as shop_name, s.address as shop_address, u.full_name as user_name
@@ -654,6 +638,47 @@ app.get('/api/like/:userId', async (req, res) => {
             WHERE f.user_id = ?
         `, [req.params.userId]);
         res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Reviews
+app.post('/api/reviews', async (req, res) => {
+    const { orderId, driverId, userId, rating, comment } = req.body;
+    try {
+        await pool.query(
+            'INSERT INTO reviews (order_id, driver_id, user_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
+            [orderId, driverId, userId, rating, comment]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/users/:id/reviews', async (req, res) => {
+    const driverId = req.params.id;
+    try {
+        const [reviews] = await pool.query(`
+            SELECT r.*, u.full_name as user_name, u.avatar_url as user_avatar
+            FROM reviews r
+            JOIN users u ON r.user_id = u.id
+            WHERE r.driver_id = ?
+            ORDER BY r.created_at DESC
+        `, [driverId]);
+
+        const [stats] = await pool.query(`
+            SELECT AVG(rating) as average_rating, COUNT(*) as total_reviews
+            FROM reviews
+            WHERE driver_id = ?
+        `, [driverId]);
+
+        res.json({
+            reviews,
+            averageRating: stats[0].average_rating || 0,
+            totalReviews: stats[0].total_reviews || 0
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

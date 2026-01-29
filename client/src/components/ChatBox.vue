@@ -26,16 +26,16 @@
       </div>
       
       <div v-for="msg in messages" :key="msg.id || msg.tempId" 
-           :class="['flex w-full group', msg.sender_id === currentUser.id ? 'justify-end' : 'justify-start']">
+           :class="['flex w-full group', msg.sender_id == currentUser.id ? 'justify-end' : 'justify-start']">
         
         <div :class="[
           'max-w-[75%] px-4 py-2.5 shadow-sm relative transition-all duration-200',
-          msg.sender_id === currentUser.id 
+          msg.sender_id == currentUser.id 
             ? 'bg-gradient-to-br from-green-500 to-green-600 text-white rounded-2xl rounded-tr-sm' 
             : 'bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-sm'
         ]">
           <p class="text-[15px] leading-relaxed break-words">{{ msg.content }}</p>
-          <div :class="['text-[10px] mt-1 flex items-center gap-1', msg.sender_id === currentUser.id ? 'text-green-100 justify-end' : 'text-gray-400']">
+          <div :class="['text-[10px] mt-1 flex items-center gap-1', msg.sender_id == currentUser.id ? 'text-green-100 justify-end' : 'text-gray-400']">
             <span>{{ formatTime(msg.created_at) }}</span>
             <span v-if="msg.sending" class="animate-pulse">⏳</span>
           </div>
