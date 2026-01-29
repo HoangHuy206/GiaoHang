@@ -11,6 +11,7 @@ import TheoDoiDonHang from '../views/TheoDoiDonHang.vue';
 import ThanhToan from '../views/ThanhToan.vue';
 import TrangChuTaiXe from '../views/TrangChuTaiXe.vue';
 import ShopDashboard from '../views/ShopDashboard.vue';
+import ShopStats from '../views/ShopStats.vue';
 import Profile from '../views/Profile.vue';
 import PageNotFound from '../assets/img/A404/l404.vue';
 
@@ -29,6 +30,7 @@ const routes = [
   { path: '/thanhtoan', component: ThanhToan, meta: { title: 'Thanh toán', requiresAuth: true } },
   { path: '/trangchutaixe', component: TrangChuTaiXe, meta: { title: 'Trang chủ tài xế', requiresAuth: true } }, 
   { path: '/shop-admin', component: ShopDashboard, meta: { title: 'Shop', requiresAuth: true } }, 
+  { path: '/shop-stats', component: ShopStats, meta: { title: 'Thống kê Shop', requiresAuth: true } },
   { path: '/profile', component: Profile, meta: { title: 'Trang cá nhân', requiresAuth: true } },
  
   { path: '/hotro', component: hotro, meta: { title: 'Trung Tâm Hỗ Trợ' } },

@@ -291,6 +291,46 @@ app.get('/api/shops/:id', async (req, res) => {
     }
 });
 
+app.get('/api/shops/:id/stats', async (req, res) => {
+    const shopId = req.params.id;
+    const date = req.query.date; // Expect YYYY-MM-DD format
+
+    try {
+        let dateFilter = '';
+        const params = [shopId];
+
+        if (date) {
+            dateFilter = ' AND DATE(o.created_at) = ?';
+            params.push(date);
+        }
+
+        // 1. Top Selling Products
+        const [topProducts] = await pool.query(`
+            SELECT p.name, SUM(oi.quantity) as sold 
+            FROM order_items oi 
+            JOIN products p ON oi.product_id = p.id 
+            JOIN orders o ON oi.order_id = o.id 
+            WHERE o.shop_id = ? ${dateFilter}
+            GROUP BY p.name 
+            ORDER BY sold DESC 
+            LIMIT 5
+        `, params);
+
+        // 2. Peak Purchase Times (by Hour)
+        const [peakTimes] = await pool.query(`
+            SELECT HOUR(created_at) as order_hour, COUNT(*) as count 
+            FROM orders 
+            WHERE shop_id = ? ${dateFilter.replace('o.', '')}
+            GROUP BY order_hour 
+            ORDER BY order_hour
+        `, params);
+
+        res.json({ topProducts, peakTimes });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Orders
 app.post('/api/orders', async (req, res) => {
     const { userId, shopId, items, totalPrice, deliveryAddress, deliveryLat, deliveryLng } = req.body;

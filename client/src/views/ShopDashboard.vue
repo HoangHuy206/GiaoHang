@@ -53,25 +53,9 @@ const orders = ref([]);
 const loading = ref(true);
 const socket = io(SOCKET_URL);
 
-// Assuming the auth.user has the shopId linked or we fetch by user ID
-// For this prototype, let's assume we fetch all orders for the shop the user owns.
-// We need to know the Shop ID. In a real app, backend sends this. 
-// For now, we'll fetch orders by role='shop' and let backend handle logic.
-
 const fetchOrders = async () => {
     try {
-        // Need to pass Shop ID. In `seed.js`, we linked User to Shop.
-        // We'll rely on the backend to find the shop for this user.
-        // But our backend endpoint `GET /orders` expects `shopId` in query if role is shop.
-        // Quick fix: Fetch shop details first to get ID.
-        
-        // Actually, let's just fetch all shops, find the one owned by this user.
         const shopsRes = await axios.get(`${API_BASE_URL}/api/shops`);
-        // This is inefficient but works for the prototype without changing backend auth structure deeply
-        // Wait, schema says shops has user_id. 
-        // Backend `GET /orders` logic: `if (role === 'shop') query += ' WHERE o.shop_id = ?'`
-        
-        // Let's first get the shop ID for this user.
         const myShop = shopsRes.data.find(s => s.user_id === auth.user.id);
         
         if (myShop) {
@@ -114,10 +98,6 @@ onMounted(() => {
     socket.on('new_order', (data) => {
         alert("Có đơn hàng mới!");
         fetchOrders(); // Reload to get full details
-    });
-    
-    socket.on('driver_notification', () => {
-         // Not really for shop, but good to know
     });
 });
 </script>

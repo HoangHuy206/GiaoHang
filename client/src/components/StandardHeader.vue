@@ -53,9 +53,18 @@ const openCart = () => {
 
       <nav class="header-nav" v-if="!isDriver">
         <router-link :to="homeLink" class="nav-link">Trang chủ</router-link>
-        <router-link to="/food" class="nav-link">Đặt món</router-link>
-        <router-link to="/theodoidonhang" class="nav-link" v-if="auth.user && auth.user.role === 'user'">Đơn hàng</router-link>
-        <router-link to="/hotro" class="nav-link">Hỗ Trợ</router-link>
+        
+        <!-- Điều hướng cho Khách hàng -->
+        <template v-if="!auth.user || auth.user.role === 'user'">
+          <router-link to="/food" class="nav-link">Đặt món</router-link>
+          <router-link to="/theodoidonhang" class="nav-link" v-if="auth.user">Đơn hàng</router-link>
+          <router-link to="/hotro" class="nav-link">Hỗ Trợ</router-link>
+        </template>
+
+        <!-- Điều hướng cho Chủ quán (Shop) -->
+        <template v-else-if="auth.user.role === 'shop'">
+          <router-link to="/shop-stats" class="nav-link">Thống kê</router-link>
+        </template>
       </nav>
 
       <div class="header-right">
@@ -113,7 +122,7 @@ const openCart = () => {
 .header-left { display: flex; align-items: center; gap: clamp(5px, 2vw, 15px); }
 .menu-btn { background: none; border: none; cursor: pointer; color: #333; padding: 5px; display: flex; align-items: center; }
 .logo-area { display: flex; align-items: center; gap: clamp(5px, 1.5vw, 10px); text-decoration: none; }
-.logo-img { height: clamp(35px, 5vw, 50px); width: auto; object-fit: contain; }
+.logo-img { height: clamp(60px, 8vw, 85px); width: auto; object-fit: contain; }
 .logo-name { font-weight: 800; font-size: clamp(14px, 2vw, 18px); color: #2c7a3f; text-transform: uppercase; letter-spacing: 0.5px; }
 
 .header-nav { display: flex; gap: clamp(10px, 2vw, 25px); }
@@ -121,7 +130,7 @@ const openCart = () => {
 .nav-link:hover { color: #2c7a3f; }
 
 .header-right { display: flex; align-items: center; gap: clamp(8px, 2vw, 15px); }
-.auth-link { text-decoration: none; color: #333; font-weight: 600; font-size: clamp(13px, 1.5vw, 15px); }
+.auth-link { text-decoration: none; color: #333; font-weight: 600; font-size: clamp(23px, 2.5vw, 20px); }
 .auth-btn { text-decoration: none; background: #2c7a3f; color: white; padding: 6px clamp(12px, 2vw, 18px); border-radius: 8px; font-weight: bold; font-size: clamp(12px, 1.5vw, 14px); transition: 0.2s; }
 .auth-btn:hover { background: #246332; }
 
