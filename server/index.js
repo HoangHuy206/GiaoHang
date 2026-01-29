@@ -168,6 +168,16 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Typing indicators
+    socket.on('typing', (data) => {
+        // data: { orderId, userId }
+        socket.to(`order_${data.orderId}`).emit('typing', data);
+    });
+
+    socket.on('stop_typing', (data) => {
+        socket.to(`order_${data.orderId}`).emit('stop_typing', data);
+    });
+
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         onlineDrivers.delete(socket.id);
@@ -205,7 +215,11 @@ app.post('/api/auth/login', async (req, res) => {
                 full_name: user.full_name,
                 address: user.address,
                 email: user.email,
-                avatar_url: user.avatar_url 
+                avatar_url: user.avatar_url,
+                phone: user.phone,
+                cccd: user.cccd,
+                gender: user.gender,
+                vehicle: user.vehicle
             }});
         } else {
             res.status(401).json({ error: 'Invalid credentials' });

@@ -1,5 +1,6 @@
 <template>
-  <div class="max-w-4xl mx-auto p-4">
+  <StandardHeader />
+  <div class="max-w-4xl mx-auto p-4 mt-4">
     <h2 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-4">Đơn Hàng Của Bạn</h2>
 
     <div v-if="loading" class="text-center py-10">
@@ -74,6 +75,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
+import StandardHeader from '../components/StandardHeader.vue';
 import { useAuthStore } from '../stores/auth';
 import { useRouter } from 'vue-router';
 import { API_BASE_URL } from '../config';

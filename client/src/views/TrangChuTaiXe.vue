@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import StandardHeader from '../components/StandardHeader.vue'
 import { useAuthStore } from '../stores/auth'
 import axios from 'axios'
 import L from 'leaflet'
@@ -53,6 +54,60 @@ const driverLocation = ref(null)
 const currentTab = ref('home') // 'home', 'income', 'inbox', 'profile'
 const myHistory = ref([])
 const totalIncome = ref(0)
+const fileInput = ref(null)
+
+// Hàm xử lý đường dẫn ảnh đại diện
+const getAvatarUrl = (path) => {
+    if (!path) return '';
+    if (path.startsWith('http')) {
+        return path.replace('http://localhost:3000', API_BASE_URL);
+    }
+    return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+};
+
+// Xử lý đổi Avatar
+const handleFileChange = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('avatar', file);
+    formData.append('full_name', auth.user.full_name || '');
+    formData.append('address', auth.user.address || '');
+    formData.append('email', auth.user.email || '');
+
+    try {
+        const res = await axios.put(`${API_BASE_URL}/api/users/${auth.user.id}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        
+        if (res.data.success) {
+            auth.user = res.data.user;
+            localStorage.setItem('user', JSON.stringify(res.data.user));
+            alert("Đổi ảnh đại diện thành công!");
+        }
+    } catch (e) {
+        alert("Lỗi tải ảnh: " + (e.response?.data?.error || e.message));
+    }
+};
+
+// Xử lý cập nhật thông tin (Nếu cần thêm form edit)
+const updateProfile = async () => {
+    try {
+        const res = await axios.put(`${API_BASE_URL}/api/users/${auth.user.id}`, {
+            full_name: auth.user.full_name,
+            email: auth.user.email,
+            address: auth.user.address
+        });
+        if (res.data.success) {
+            auth.user = res.data.user;
+            localStorage.setItem('user', JSON.stringify(res.data.user));
+            alert("Cập nhật thông tin thành công!");
+        }
+    } catch (e) {
+        alert("Lỗi: " + e.message);
+    }
+};
 
 // Âm thanh thông báo
 const notificationSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3')
@@ -327,6 +382,7 @@ onUnmounted(() => { socket.disconnect() })
 </script>
 
 <template>
+  <StandardHeader />
   <div class="dashboard-container">
     <main class="main-content">
       <!-- MAP VIEW -->
@@ -433,29 +489,43 @@ onUnmounted(() => { socket.disconnect() })
       <div v-if="currentTab === 'profile'" class="profile-view">
         <div class="profile-card">
           <div class="profile-header">
-            <div class="avatar-circle">
-              <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#00b14f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            <div class="avatar-circle-large overflow-hidden border-4 border-green-100 relative group">
+              <img v-if="auth.user?.avatar_url" :src="getAvatarUrl(auth.user.avatar_url)" alt="Avatar" class="w-full h-full object-cover">
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#00b14f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              
+              <!-- Nút đổi ảnh nhanh -->
+              <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" @click="$refs.fileInput.click()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+              </div>
             </div>
-            <h2>{{ userName }}</h2>
-            <p class="role-badge">Tài xế đối tác</p>
+            <input type="file" ref="fileInput" @change="handleFileChange" accept="image/*" class="hidden">
+            
+            <h2>{{ auth.user?.full_name || auth.user?.username }}</h2>
+            <p class="role-badge">Tài xế đối tác chuyên nghiệp</p>
           </div>
           
           <div class="profile-info-list">
              <div class="info-item">
                <span class="label">Số điện thoại:</span>
-               <span class="value">{{ userPhone }}</span>
+               <span class="value">{{ auth.user?.phone || 'Chưa cập nhật' }}</span>
              </div>
              <div class="info-item">
                <span class="label">Email:</span>
-               <span class="value">{{ userEmail }}</span>
+               <span class="value">{{ auth.user?.email || 'Chưa cập nhật' }}</span>
              </div>
              <div class="info-item">
-               <span class="label">Biển số xe:</span>
-               <span class="value">29-H1 123.45</span>
+               <span class="label">Phương tiện:</span>
+               <span class="value">{{ auth.user?.vehicle || 'Chưa cập nhật' }}</span>
+             </div>
+             <div class="info-item">
+               <span class="label">Số CCCD:</span>
+               <span class="value">{{ auth.user?.cccd || '**********' }}</span>
              </div>
           </div>
 
-           <button class="logout-btn" @click="handleLogout">Đăng xuất</button>
+           <button class="driver-logout-btn" @click="handleLogout">
+             ĐĂNG XUẤT TÀI KHOẢN
+           </button>
         </div>
       </div>
 
@@ -718,36 +788,76 @@ onUnmounted(() => { socket.disconnect() })
   margin-top: 10px;
 }
 
-.avatar-circle {
-  width: 100px;
-  height: 100px;
+.avatar-circle-large {
+
+  width: 120px;
+
+  height: 120px;
+
   background: #e8f5e9;
+
   border-radius: 50%;
+
   display: flex;
+
   align-items: center;
+
   justify-content: center;
-  margin-bottom: 15px;
+
+  margin: 0 auto 15px auto;
+
+  transition: all 0.3s ease;
+
 }
+
+
 
 .profile-header { text-align: center; margin-bottom: 30px; }
-.profile-header h2 { margin: 10px 0 5px; color: #333; }
-.role-badge { background: #00b14f; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; display: inline-block; }
 
-.profile-info-list { width: 100%; display: flex; flex-direction: column; gap: 15px; }
-.info-item { display: flex; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid #eee; }
-.info-item .label { color: #666; font-weight: 500; }
-.info-item .value { color: #333; font-weight: 600; }
+.profile-header h2 { margin: 10px 0 5px; color: #333; font-weight: 800; }
 
-.logout-btn {
-  margin-top: 30px;
+.role-badge { background: #00b14f; color: white; padding: 4px 16px; border-radius: 20px; font-size: 0.75rem; display: inline-block; font-weight: bold; }
+
+
+
+.profile-info-list { width: 100%; display: flex; flex-direction: column; gap: 12px; }
+
+.info-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+
+.info-item .label { color: #777; font-weight: 500; font-size: 14px; }
+
+.info-item .value { color: #333; font-weight: 700; font-size: 14px; }
+
+
+
+.driver-logout-btn {
+
+  margin-top: 40px;
+
   background: #fff;
-  border: 1px solid #ff4d4f;
+
+  border: 2px solid #ff4d4f;
+
   color: #ff4d4f;
-  padding: 10px 30px;
-  border-radius: 8px;
+
+  width: 100%;
+
+  padding: 14px;
+
+  border-radius: 12px;
+
   cursor: pointer;
-  font-weight: 600;
+
+  font-weight: 800;
+
+  font-size: 14px;
+
   transition: all 0.2s;
+
+  letter-spacing: 1px;
+
 }
-.logout-btn:hover { background: #ff4d4f; color: white; }
+
+.driver-logout-btn:hover { background: #ff4d4f; color: white; box-shadow: 0 4px 12px rgba(255, 77, 79, 0.2); }
+
 </style>

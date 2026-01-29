@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'        
 import { RouterLink } from 'vue-router'
 import axios from 'axios' 
+import StandardHeader from '../components/StandardHeader.vue'
 import { API_BASE_URL } from '../config'
 
 const getImageUrl = (url) => {
@@ -163,31 +164,7 @@ const filteredFoods = computed(() => {
 
 <template>
   <div class="grab-container">
-    <header class="navbar-custom">
-      <div class="nav-left">
-        <svg class="menu-icon" @click="isMenuOpen = !isMenuOpen" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line>
-        </svg>
-        <div class="logo-box">
-           <img src="@/assets/img/anh.logo/anhnen.png" alt="Grab" class="logo-img" style="width: 100px; height:100px;"/> 
-        </div>
-      </div>
-      <div class="nav-right">
-        <span class="support-text">Trung Tâm Hỗ Trợ</span>
-        
-        <a href="/giohang" @click.prevent="openCartPopup" class="cart-icon-link">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: black;">
-            <circle cx="9" cy="21" r="1"></circle>
-            <circle cx="20" cy="21" r="1"></circle>
-            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
-          </svg>
-        </a>
-
-        <router-link to="/profile">
-            <svg class="icon-action" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-        </router-link>
-      </div>
-    </header>
+    <StandardHeader show-menu-button @toggle-menu="isMenuOpen = !isMenuOpen" />
 
     <div v-if="isMenuOpen" class="mega-menu">
       <div class="menu-sidebar">
@@ -316,11 +293,10 @@ const filteredFoods = computed(() => {
 * { padding: 0; margin: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
 .grab-container { width: 100%; overflow-x: hidden; margin: 0; padding: 0; }
 
-.navbar-custom { display: flex; justify-content: space-between; align-items: center; padding: 0 40px; background-color: #9EF3C0; position: fixed; top: 0; left: 0; width: 100%; height: 80px; z-index: 1000; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin: 0; }
 .nav-left, .nav-right { display: flex; align-items: center; gap: 20px; }
 .logo-img { height: 60px; object-fit: contain; }
 
-.slider-container { position: relative; width: 100%; height: 500px; overflow: hidden; margin-top: 80px; padding: 0; }
+.slider-container { position: relative; width: 100%; height: clamp(300px, 50vh, 500px); overflow: hidden; margin-top: 0; padding: 0; }
 .slides-wrapper { display: flex; height: 100%; transition: transform 0.8s ease; width: 100%; margin: 0; padding: 0; }
 .slide { min-width: 100%; height: 100%; }
 .slide img { width: 100%; height: 100%; object-fit: cover; display: block; }

@@ -154,6 +154,26 @@ import { API_BASE_URL } from '../config';
 // Helper trim
 const clean = (v) => (v ?? '').toString().trim();
 
+const router = useRouter();
+const isLoading = ref(false);
+
+const username = ref('');
+const password = ref('');
+const fullName = ref('');
+const email = ref('');
+const phone = ref('');
+const cccd = ref('');
+const gender = ref('Nam');
+const address = ref('');
+const vehicle = ref('');
+
+const restrictInputToNumbers = (event) => {
+  event.target.value = event.target.value.replace(/[^0-9]/g, '');
+  // Update v-model manually if needed, though v-model usually handles it
+  if (event.target.id === 'phone') phone.value = event.target.value;
+  if (event.target.id === 'cccd') cccd.value = event.target.value;
+};
+
 const handleRegister = async () => {
   if (isLoading.value) return;
   isLoading.value = true;

@@ -1,5 +1,6 @@
 <template>
-  <div class="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg border-t-4 border-green-500">
+  <StandardHeader />
+  <div class="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg border-t-4 border-green-500 mt-8 mb-8">
     <h2 class="text-3xl font-bold text-green-800 mb-8 text-center">Hồ Sơ Của Bạn</h2>
 
     <div class="flex flex-col items-center mb-8">
@@ -71,6 +72,7 @@
 
 <script setup>
 import { useAuthStore } from '../stores/auth';
+import StandardHeader from '../components/StandardHeader.vue';
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';

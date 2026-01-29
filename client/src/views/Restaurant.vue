@@ -1,5 +1,6 @@
 <template>
-  <div v-if="shop">
+  <StandardHeader />
+  <div v-if="shop" class="p-4">
     <div class="bg-green-100 p-8 rounded-xl mb-8 flex flex-col md:flex-row items-center md:justify-between">
         <div>
             <h2 class="text-4xl font-bold text-green-800 mb-2">{{ shop.name }}</h2>
@@ -48,6 +49,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
+import StandardHeader from '../components/StandardHeader.vue';
 import { useAuthStore } from '../stores/auth';
 import { cartBus } from '../utils/cartBus';
 import axios from 'axios';

@@ -1,5 +1,6 @@
 <template>
-  <div class="container mx-auto p-4">
+  <StandardHeader />
+  <div class="container mx-auto p-4 mt-4">
     <h1 class="text-3xl font-bold mb-6 text-green-800">Quản Lý Đơn Hàng - {{ auth.user?.full_name }}</h1>
     
     <div v-if="loading" class="text-center">Loading orders...</div>
@@ -41,6 +42,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import StandardHeader from '../components/StandardHeader.vue';
 import { useAuthStore } from '../stores/auth';
 import axios from 'axios';
 import { io } from 'socket.io-client';

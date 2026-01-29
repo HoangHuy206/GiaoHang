@@ -14,6 +14,8 @@ import ShopDashboard from '../views/ShopDashboard.vue';
 import Profile from '../views/Profile.vue';
 import PageNotFound from '../assets/img/A404/l404.vue';
 
+import hotro from '../views/hotro.vue';
+
 const routes = [
   { path: '/', component: Home ,meta: { title: 'Trang chủ - Giao Hàng' } },
   { path: '/login', component: Login ,meta: { title: 'Đăng nhập ' } },
@@ -28,6 +30,8 @@ const routes = [
   { path: '/trangchutaixe', component: TrangChuTaiXe, meta: { title: 'Trang chủ tài xế', requiresAuth: true } }, 
   { path: '/shop-admin', component: ShopDashboard, meta: { title: 'Shop', requiresAuth: true } }, 
   { path: '/profile', component: Profile, meta: { title: 'Trang cá nhân', requiresAuth: true } },
+ 
+  { path: '/hotro', component: hotro, meta: { title: 'Trung Tâm Hỗ Trợ' } },
   { path: '/:pathMatch(.*)*', component: PageNotFound, meta: { title: '404 - Không tìm thấy trang' } },
 ];
 

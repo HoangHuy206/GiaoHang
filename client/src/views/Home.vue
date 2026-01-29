@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue'
+import StandardHeader from '../components/StandardHeader.vue'
 
 const isMenuOpen = ref(false)
 const activeTab = ref('nguoidung') // Tab chính: Người dùng / Tài xế
@@ -13,27 +14,7 @@ watch(isMenuOpen, (open) => {
 
 <template>
   <div id="home-page">
-    <header>
-      <a href="#" @click.prevent="isMenuOpen = !isMenuOpen" class="menu-toggle">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-      </a>
-      
-      <router-link to="/">
-        <img src="@/assets/img/anh.logo/anhnen.png" alt="Logo" class="header-logo" style="width: 200px; height: 150px;">
-      </router-link>
-
-      <div class="header-right">
-        <router-link to="" class="support-link">
-          <p>Trung Tâm Hỗ Trợ</p>
-        </router-link>
-        <router-link to="/login">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-            <circle cx="12" cy="7" r="4"></circle>
-          </svg>
-        </router-link>
-      </div>
-    </header>
+    <StandardHeader show-menu-button @toggle-menu="isMenuOpen = !isMenuOpen" />
 
     <div v-if="isMenuOpen" class="mega-menu-container">
       <div class="mega-menu-content">
@@ -241,69 +222,13 @@ watch(isMenuOpen, (open) => {
 </template>
 
 <style scoped>
-/* --- HEADER --- */
-header {
-  width: 100%;
-  height: 88px;
-  display: flex;
-  position: fixed;
-  top: 0;
-  left: 0;
-  padding: 0 20px;
-  background-color: #B8FFC3;
-  z-index: 1000;
-  align-items: center;
-  border-bottom: 1px solid rgba(0,0,0,0.1);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-
-.menu-toggle {
-  font-size: 24px;
-  color: #000;
-  text-decoration: none;
-  margin-right: 15px;
-  display: flex;
-  align-items: center;
-}
-
-/* Sửa lỗi ảnh logo quá to */
-.header-logo {
-  height: 50px; 
-  width: auto;
-  object-fit: contain;
-}
-
-.header-right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.header-right a {
-  text-decoration: none;
-  color: #333;
-  display: flex;
-  align-items: center;
-}
-
-.support-link p {
-  font-weight: bold;
-  margin: 0;
-  display: none; /* Ẩn chữ trên mobile */
-}
-
- @media (min-width: 768px) {
-  .support-link p { display: block; }
-}
-
 /* --- MEGA MENU --- */
 .mega-menu-container {
   position: fixed;
-  top: 88px;
+  top: 80px;
   left: 0;
   width: 100%;
-  height: calc(100vh - 88px);
+  height: calc(100vh - 80px);
   z-index: 999;
   display: flex;
   flex-direction: column;
@@ -376,7 +301,7 @@ header {
 /* --- MAIN CONTENT --- */
 .background-img {
   width: 100%;
-  margin-top: 88px; 
+  margin-top: 0; 
 }
 
 .background-img img {
