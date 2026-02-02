@@ -195,6 +195,14 @@ export default {
     const shippingRates = { priority: 36000, fast: 28000, saver: 22000 };
 
     onMounted(async () => {
+      // Lắng nghe sự kiện thanh toán thành công tức thì qua Socket
+      socket.on('payment_success', (data) => {
+          console.log("🔔 Nhận tín hiệu thanh toán thành công tức thì:", data);
+          paymentStatus.value = 'success';
+          if (timerInterval) clearInterval(timerInterval);
+          if (checkInterval) clearInterval(checkInterval);
+      });
+
       // Load Leaflet
       if (!document.getElementById('leaflet-css')) {
         const link = document.createElement('link'); link.id = 'leaflet-css'; link.rel = 'stylesheet'; link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(link);
@@ -236,101 +244,107 @@ export default {
 
     const qrCodeUrl = computed(() => `https://img.vietqr.io/image/${bankId}-${accountNo}-qr_only.png?amount=${finalTotal.value}&addInfo=${randomOrderCode.value}`);
 
-        const checkPaymentStatus = async () => {
+            const checkPaymentStatus = async () => {
 
-            try {
+                try {
 
-                const res = await axios.get(`${API_BASE_URL}/api/payment/check/${randomOrderCode.value}`);
+                    // Thêm timestamp ?t= để chống cache trình duyệt
 
-                if (res.data.paid) {
+                    const res = await axios.get(`${API_BASE_URL}/api/payment/check/${randomOrderCode.value}?t=${Date.now()}`);
 
-                    paymentStatus.value = 'success';
+                    if (res.data.paid) {
 
-                    // Dừng đếm ngược và dừng polling
+                        paymentStatus.value = 'success';
 
-                    if (timerInterval) clearInterval(timerInterval);
+                        if (timerInterval) clearInterval(timerInterval);
 
-                    if (checkInterval) clearInterval(checkInterval);
+                        if (checkInterval) clearInterval(checkInterval);
 
-                    return true;
+                        return true;
 
-                }
+                    }
 
-            } catch (e) {
+                } catch (e) {
 
-                console.error("Lỗi kiểm tra thanh toán:", e);
-
-            }
-
-            return false;
-
-        };
-
-    
-
-        let checkInterval = null;
-
-    
-
-        const startPollingPayment = () => {
-
-            if (checkInterval) clearInterval(checkInterval);
-
-            checkInterval = setInterval(async () => {
-
-                const isPaid = await checkPaymentStatus();
-
-                if (isPaid) {
-
-                    clearInterval(checkInterval);
+                    console.error("Lỗi kiểm tra thanh toán:", e);
 
                 }
 
-            }, 3000); // Kiểm tra mỗi 3 giây
+                return false;
 
-        };
+            };
 
-    
+        
 
-        const generateNewQR = async () => {
+            let checkInterval = null;
 
-          randomOrderCode.value = 'DH' + Math.floor(Math.random() * 1000000);
+        
 
-          paymentStatus.value = 'pending';
+            const startPollingPayment = () => {
 
-          qrTimeLeft.value = 600;
+                if (checkInterval) clearInterval(checkInterval);
 
-          
+                checkInterval = setInterval(async () => {
 
-          try {
+                    const isPaid = await checkPaymentStatus();
 
-            await axios.post(`${API_BASE_URL}/api/payment/register`, { code: randomOrderCode.value });
+                    if (isPaid) {
 
-          } catch (e) {
+                        clearInterval(checkInterval);
 
-            console.error("Lỗi đăng ký mã thanh toán:", e);
+                    }
 
-          }
+                }, 3000); 
 
-    
+            };
 
-          if (timerInterval) clearInterval(timerInterval);
+        
 
-          timerInterval = setInterval(() => {
+            const generateNewQR = async () => {
 
-            if (qrTimeLeft.value > 0) qrTimeLeft.value--;
+              randomOrderCode.value = 'DH' + Math.floor(Math.random() * 1000000);
 
-            else generateNewQR();
+              paymentStatus.value = 'pending';
 
-          }, 1000);
+              qrTimeLeft.value = 600;
 
-    
+              
 
-          // Tự động kiểm tra thanh toán ngay lập tức
+              // Tham gia vào phòng socket của đơn hàng này để nhận tin nhắn tức thì
 
-          startPollingPayment();
+              const idNum = randomOrderCode.value.replace(/\D/g, '');
 
-        };
+              socket.emit('join_room', `order_${idNum}`);
+
+        
+
+              try {
+
+                await axios.post(`${API_BASE_URL}/api/payment/register`, { code: randomOrderCode.value });
+
+              } catch (e) {
+
+                console.error("Lỗi đăng ký mã thanh toán:", e);
+
+              }
+
+        
+
+              if (timerInterval) clearInterval(timerInterval);
+
+              timerInterval = setInterval(() => {
+
+                if (qrTimeLeft.value > 0) qrTimeLeft.value--;
+
+                else generateNewQR();
+
+              }, 1000);
+
+        
+
+              startPollingPayment();
+
+            };
 
     
 
