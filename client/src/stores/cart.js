@@ -10,9 +10,11 @@ export const useCartStore = defineStore('cart', {
   },
   actions: {
     addToCart(product, shopId) {
-      // Clear cart if adding from a different shop (optional rule, but common)
+      // Clear cart if adding from a different shop
       if (this.items.length > 0 && this.items[0].shopId !== shopId) {
-        if(!confirm("Start a new basket? You can only order from one shop at a time.")) return;
+        if(!confirm("Giỏ hàng đang chứa món của quán khác. Bạn có muốn xóa giỏ hàng cũ để bắt đầu đặt quán mới này không?")) {
+            return;
+        }
         this.items = [];
       }
 

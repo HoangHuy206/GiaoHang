@@ -15,8 +15,18 @@ const { MOCK_SHOPS, MOCK_PRODUCTS } = require('./mockData');
 const app = express();
 
 // Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "YOUR_API_KEY_HERE");
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+let model = null;
+if (process.env.GEMINI_API_KEY) {
+    try {
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    } catch (e) {
+        console.error("Gemini Init Error:", e.message);
+    }
+} else {
+    console.warn("⚠️ Warning: GEMINI_API_KEY is missing. AI Chat will use fallback mode.");
+}
+
 const server = http.createServer(app);
 
 // Use compression to reduce file sizes sent over the network
@@ -221,9 +231,14 @@ app.post('/api/chat', async (req, res) => {
         `;
 
         // 3. Gửi cho Gemini
-        const result = await model.generateContent(prompt);
-        const response = result.response;
-        const text = response.text();
+        let text = "";
+        if (model) {
+            const result = await model.generateContent(prompt);
+            const response = result.response;
+            text = response.text();
+        } else {
+            throw new Error("AI Model not initialized (Missing API Key)");
+        }
 
         res.json({ reply: text });
 
@@ -264,45 +279,80 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-// --- Real Payment Webhook Logic ---
-
-// 1. Endpoint nhận Webhook từ ngân hàng (thông qua trung gian Casso/SePay/VietQR...)
-// Dữ liệu mẫu từ SePay/Casso thường có dạng: { content: "DH123456", amount: 50000, ... }
+// ============================================================
+// KHU VỰC QUAN TRỌNG: PAYMENT WEBHOOK (ĐÃ SỬA & GIỮ LOGIC)
+// ============================================================
 app.post('/api/payment/webhook', async (req, res) => {
+    // 1. Nhận dữ liệu từ SePay
     const { content, amount, description, orderCode } = req.body;
-    
-    // Tìm mã đơn hàng trong nội dung chuyển khoản
-    // Ưu tiên nếu bên thứ 3 gửi field 'orderCode' riêng, nếu không thì parse từ content
-    // Giả sử nội dung CK có dạng: "DH123456"
-    
+    console.log("🔔 Webhook Received:", JSON.stringify(req.body));
+
+    // 2. Phân tích nội dung để tìm mã đơn hàng (VD: SEVQR DH123 -> Lấy DH123)
     let detectedOrderCode = null;
     const incomingContent = content || description || orderCode || "";
+
+    // Regex tìm chữ DH kèm số (DH123, DH_123,...) bất kể chữ hoa thường
+    const match = incomingContent.match(/(DH[0-9_]+)/i); 
     
-    // Regex tìm chuỗi bắt đầu bằng DH theo sau là số
-    const match = incomingContent.match(/(DH\d+)/i);
     if (match) {
-        detectedOrderCode = match[1].toUpperCase();
-    } else {
-        // Fallback: nếu user gửi thẳng mã orderCode
-        if (orderCode) detectedOrderCode = orderCode;
+        detectedOrderCode = match[1].toUpperCase(); 
+    } else if (orderCode) {
+        detectedOrderCode = orderCode;
     }
 
     if (!detectedOrderCode) {
-        return res.status(400).json({ success: false, message: "No order code found in content" });
+        console.log("❌ Không tìm thấy mã đơn hàng trong nội dung:", incomingContent);
+        return res.json({ success: false, message: "No order code found" });
     }
 
-    console.log(`[Webhook] Received payment for ${detectedOrderCode}, Amount: ${amount}`);
+    // 3. Lấy ID số (VD: DH123 -> 123)
+    const orderIdNum = detectedOrderCode.replace(/[^0-9]/g, '');
 
+    console.log(`✅ Phát hiện đơn hàng: ${detectedOrderCode} (ID: ${orderIdNum}) - Tiền: ${amount}`);
+
+    const connection = await pool.getConnection();
     try {
-        // Lưu vào DB
-        await pool.query(
+        await connection.beginTransaction();
+
+        // 4. Lưu lịch sử giao dịch
+        await connection.query(
             'INSERT INTO transactions (order_code, amount, content, gateway) VALUES (?, ?, ?, ?)',
             [detectedOrderCode, amount, incomingContent, 'webhook']
         );
+
+        // 5. CẬP NHẬT TRẠNG THÁI ĐƠN HÀNG -> finding_driver
+        if (orderIdNum) {
+            await connection.query(
+                "UPDATE orders SET status = 'finding_driver' WHERE id = ?", 
+                [orderIdNum]
+            );
+
+            // 6. BẮN SOCKET CHO FRONTEND (Để màn hình tự chuyển)
+            // Bắn event 'payment_success' cho phòng của đơn hàng đó
+            io.to(`order_${orderIdNum}`).emit('payment_success', { 
+                orderId: orderIdNum,
+                status: 'finding_driver',
+                message: 'Thanh toán thành công'
+            });
+
+            // Bắn thêm event update status chung
+            io.to(`order_${orderIdNum}`).emit('status_update', { 
+                status: 'finding_driver', 
+                orderId: orderIdNum 
+            });
+
+            console.log(`🚀 Đã cập nhật đơn #${orderIdNum} -> finding_driver và báo cho Client.`);
+        }
+
+        await connection.commit();
         res.json({ success: true });
+
     } catch (err) {
-        console.error("Database Error (Webhook):", err);
-        res.status(500).json({ success: false, error: err.message });
+        await connection.rollback();
+        console.error("❌ DB Error Webhook:", err);
+        res.status(500).json({ success: false });
+    } finally {
+        connection.release();
     }
 });
 
@@ -333,9 +383,7 @@ app.post('/api/payment/register', (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
     const { username, password, role, fullName, address, email, phone, cccd, gender, vehicle } = req.body;
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         const [result] = await pool.query(
             'INSERT INTO users (username, password, role, full_name, address, email, phone, cccd, gender, vehicle) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [username, password, role, fullName, address, email, phone, cccd, gender, vehicle]
@@ -351,9 +399,7 @@ ${process.env.DB_NAME}
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         const [rows] = await pool.query('SELECT * FROM users WHERE username = ? AND password = ?', [username, password]);
         if (rows.length > 0) {
             const user = rows[0];
@@ -394,9 +440,7 @@ app.put('/api/users/:id', upload.single('avatar'), async (req, res) => {
     const file = req.file;
 
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         let query = 'UPDATE users SET full_name = ?, address = ?, email = ?';
         let params = [full_name, address, email];
 
@@ -422,8 +466,8 @@ ${process.env.DB_NAME}
                 username: user.username, 
                 role: user.role, 
                 full_name: user.full_name, 
-                address: user.address,
-                email: user.email,
+                address: user.address, 
+                email: user.email, 
                 avatar_url: user.avatar_url 
             } 
         });
@@ -448,9 +492,7 @@ ${process.env.DB_NAME}
 // Get All Products (for AI or Search)
 app.get('/api/products', async (req, res) => {
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         const [rows] = await pool.query('SELECT p.*, s.name as shop_name FROM products p JOIN shops s ON p.shop_id = s.id');
         res.json(rows);
     } catch (err) {
@@ -462,9 +504,7 @@ ${process.env.DB_NAME}
 // Shops & Products
 app.get('/api/shops', async (req, res) => {
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         const [rows] = await pool.query('SELECT * FROM shops');
         res.json(rows);
     } catch (err) {
@@ -475,9 +515,7 @@ ${process.env.DB_NAME}
 
 app.get('/api/shops/:id', async (req, res) => {
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         const [shop] = await pool.query('SELECT * FROM shops WHERE id = ?', [req.params.id]);
         const [products] = await pool.query('SELECT * FROM products WHERE shop_id = ?', [req.params.id]);
         if (shop.length === 0) return res.status(404).json({ error: 'Shop not found' });
@@ -499,9 +537,7 @@ app.get('/api/shops/:id/stats', async (req, res) => {
     const date = req.query.date; // Expect YYYY-MM-DD format
 
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         let dateFilter = '';
         const params = [shopId];
 
@@ -547,9 +583,7 @@ app.post('/api/orders', async (req, res) => {
     // items: [{ productId, quantity, price }]
     const connection = await pool.getConnection();
     try {
-        await connection.query(`USE 
-${process.env.DB_NAME}
-`);
+        await connection.query(`USE ${process.env.DB_NAME}`);
         await connection.beginTransaction();
 
         const [orderResult] = await connection.query(
@@ -586,9 +620,7 @@ ${process.env.DB_NAME}
 app.get('/api/orders', async (req, res) => {
     const { role, userId, shopId } = req.query;
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         let query = '';
         let params = [];
 
@@ -639,9 +671,7 @@ ${process.env.DB_NAME}
 app.get('/api/orders/:id/messages', async (req, res) => {
     const orderId = req.params.id;
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         const [messages] = await pool.query(
             'SELECT m.*, u.full_name, u.role FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.order_id = ? ORDER BY m.created_at ASC',
             [orderId]
@@ -658,9 +688,7 @@ app.put('/api/orders/:id/status', async (req, res) => {
     const orderId = req.params.id;
     console.log(`Cập nhật trạng thái đơn #${orderId}: ${status} (Driver: ${driverId})`);
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         let query = 'UPDATE orders SET status = ?';
         let params = [status];
 
@@ -761,13 +789,9 @@ ${process.env.DB_NAME}
                     items.forEach(item => {
                         let imgUrl = item.image_url;
                         if (imgUrl && !imgUrl.startsWith('http')) {
-                            // Nếu là đường dẫn cục bộ, Gmail sẽ không hiển thị được.
-                            // Nhưng ta vẫn gán đúng cấu trúc để sau này deploy sẽ tự chạy.
                             const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
                             imgUrl = imgUrl.startsWith('/') ? `${baseUrl}${imgUrl}` : `${baseUrl}/${imgUrl}`;
                         }
-                        
-                        // Nếu không có ảnh, dùng ảnh mặc định chuyên nghiệp
                         if (!imgUrl) imgUrl = 'https://cdn-icons-png.flaticon.com/512/706/706164.png';
 
                         itemsHtml += `
@@ -867,9 +891,7 @@ Cảm ơn bạn đã sử dụng dịch vụ!`
 app.post('/api/like', async (req, res) => {
     const { maNguoiDung, maQuan } = req.body;
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         // Ensure table exists (quick fix for prototype)
         await pool.query(`CREATE TABLE IF NOT EXISTS favorites (
             user_id INT NOT NULL,
@@ -899,9 +921,7 @@ ${process.env.DB_NAME}
 
 app.get('/api/like/:userId', async (req, res) => {
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         // Ensure table exists
          await pool.query(`CREATE TABLE IF NOT EXISTS favorites (
             user_id INT NOT NULL,
@@ -911,8 +931,7 @@ ${process.env.DB_NAME}
         )`);
 
         const [rows] = await pool.query(`
-            SELECT s.* 
-            FROM favorites f 
+            SELECT s.* FROM favorites f 
             JOIN shops s ON f.shop_id = s.id 
             WHERE f.user_id = ?
         `, [req.params.userId]);
@@ -927,9 +946,7 @@ ${process.env.DB_NAME}
 app.post('/api/reviews', async (req, res) => {
     const { orderId, driverId, userId, rating, comment } = req.body;
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         await pool.query(
             'INSERT INTO reviews (order_id, driver_id, user_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
             [orderId, driverId, userId, rating, comment]
@@ -943,9 +960,7 @@ ${process.env.DB_NAME}
 app.get('/api/users/:id/reviews', async (req, res) => {
     const driverId = req.params.id;
     try {
-        await pool.query(`USE 
-${process.env.DB_NAME}
-`);
+        await pool.query(`USE ${process.env.DB_NAME}`);
         const [reviews] = await pool.query(`
             SELECT r.*, u.full_name as user_name, u.avatar_url as user_avatar
             FROM reviews r
@@ -979,18 +994,128 @@ app.get(/^(?!\/api).+/, (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 async function checkAndMigrate() {
+
     try {
+
         const connection = await pool.getConnection();
+
         try {
+
             console.log("🔄 Initializing Database...");
-            // Create DB if not exists
-            await connection.query(`CREATE DATABASE IF NOT EXISTS 
-${process.env.DB_NAME}
-`);
-            await connection.query(`USE 
-${process.env.DB_NAME}
-`);
-            console.log(`✅ Using Database: ${process.env.DB_NAME}`);
+
+            // ... (code cũ)
+
+            await connection.query(`USE ${process.env.DB_NAME}`);
+
+
+
+            // TỰ ĐỘNG CẬP NHẬT ẢNH THẬT KHI KHỞI ĐỘNG
+
+            console.log("🖼️ Syncing product images...");
+
+            const productUpdates = [
+
+                { name: 'Cơm rang dưa bò', image: 'comrangduabo.webp' },
+
+                { name: 'Cơm rang đùi gà', image: 'comrangduiga.webp' },
+
+                { name: 'Cơm rang hải sản', image: 'comranghaisan.webp' },
+
+                { name: 'Cơm rang thập cẩm', image: 'comrangthapcam.webp' },
+
+                { name: 'Burger Bulgogi', image: 'Burger_Bulgogi.webp' },
+
+                { name: 'Burger tôm', image: 'Burger_Tom.webp' },
+
+                { name: 'Gà Rán Phần', image: 'garanphan.webp' },
+
+                { name: 'Gà sốt dâu 3 miếng', image: 'gasotdau3mieng.webp' },
+
+                { name: 'Gà sốt phô mai 3 miếng', image: 'gasotphomai3mieng.webp' },
+
+                { name: 'Mỳ', image: 'myy.webp' },
+
+                { name: 'Bơ xào', image: 'boxao.png' },
+
+                { name: 'Cocacola', image: 'coca.png' },
+
+                { name: 'Cơm thố bơ', image: 'comthobo.png' },
+
+                { name: 'Cơm thố đặc biệt', image: 'comthodacbiet.png' },
+
+                { name: 'Cơm thố dương châu', image: 'comthoduongchau.png' },
+
+                { name: 'Cơm thố sườn nướng', image: 'comthosuonnuong.png' },
+
+                { name: 'Cơm thố gà quay', image: 'comthogaquay.png' },
+
+                { name: 'Cơm thố gà', image: 'comthoga.png' },
+
+                { name: 'Gà nướng', image: 'ganuong.png' },
+
+                { name: 'Gà hầm thuốc bắc', image: 'gahamthuoc.jpg' },
+
+                { name: 'Gà hầm thập cẩm', image: 'gahamthapcam.jpg' },
+
+                { name: 'Gà đóng hộp', image: 'gadonghop.jpg' },
+
+                { name: 'Gà hầm sâm', image: 'gahamxam.jpg' },
+
+                { name: 'Gà hầm ngải cứu', image: 'gahamngaicuu.jpg' },
+
+                { name: 'Gà hầm hạt sen', image: 'gahamhatsen.jpg' },
+
+                { name: 'Hồng trà kem phô mai', image: 'hongtrakemphomaisizeM.webp' },
+
+                { name: 'Ô long kem phô mai', image: 'olongkemphomaisizeM.webp' },
+
+                { name: 'Trà xanh kem phô mai', image: 'traxanhkemphomaisizeM.webp' },
+
+                { name: 'Hồng trà khổng lồ', image: 'hongtramanquehoakhonglo.webp' },
+
+                { name: 'Trà trân châu khổng lồ', image: 'suatuoichantrauduonghokhonglo.webp' },
+
+                { name: 'Trà sữa dâu tây', image: 'trasuadaytaysizeM.webp' },
+
+                { name: 'Bánh cuốn chả nướng', image: 'banhcuonchanuong.webp' },
+
+                { name: 'Bánh cuốn chả quế', image: 'banhcuonchaque.webp' },
+
+                { name: 'Bún chả chấm', image: 'bunchacham.webp' },
+
+                { name: 'Bánh cuốn trứng', image: 'banhcuontrung.webp' },
+
+                { name: 'Bún bò huế', image: 'bunbohue.jpg' },
+
+                { name: 'Super sundae xoài', image: 'Super_sundae_xoai.webp' },
+
+                { name: 'Super sundae dâu tây', image: 'Supersundae_dautay.webp' },
+
+                { name: 'Super sundae socola', image: 'Supersundaesocola.webp' },
+
+                { name: 'Trà bí đao', image: 'tradaobigsize.webp' },
+
+                { name: 'Trà ô long kiwi', image: 'traolongkiwi.webp' },
+
+                { name: 'Dương chi cam lộ', image: 'duongchicamlo.webp' }
+
+            ];
+
+
+
+            for (const item of productUpdates) {
+
+                await connection.query(
+
+                    'UPDATE products SET image_url = ? WHERE name = ?',
+
+                    [`/uploads/${item.image}`, item.name]
+
+                );
+
+            }
+
+            console.log("✅ Product images synced.");
 
             // Check if tables exist, if not run migration manually or via seed
             const [tables] = await connection.query("SHOW TABLES LIKE 'users'");

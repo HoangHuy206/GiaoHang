@@ -64,9 +64,8 @@ async function updateImages() {
         console.log('Connected to DB...');
         
         for (const item of productUpdates) {
-            // Construct the full URL that the frontend can use
-            // Assuming the server runs on http://localhost:3000 and serves uploads folder
-            const imageUrl = `http://localhost:3000/uploads/${item.image}`;
+            // Lưu đường dẫn tương đối để chạy được cả ở Local và Render
+            const imageUrl = `/uploads/${item.image}`;
             
             const [result] = await connection.query(
                 'UPDATE products SET image_url = ? WHERE name = ?',
