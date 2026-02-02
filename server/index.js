@@ -10,6 +10,7 @@ const fs = require('fs');
 const nodemailer = require('nodemailer');
 const compression = require('compression');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { MOCK_SHOPS, MOCK_PRODUCTS } = require('./mockData');
 
 const app = express();
 
@@ -235,7 +236,7 @@ app.post('/api/chat', async (req, res) => {
 
         // Dữ liệu giả lập phòng khi DB lỗi
         if (!products || products.length === 0) {
-            products = MOCK_SHOPS; // Use Global Mock Data
+            products = MOCK_PRODUCTS; // Use Global Mock Data
         }
 
         // 1. Kiểm tra xem tên quán có trong tin nhắn không (Ưu tiên cao nhất)
