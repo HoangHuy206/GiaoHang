@@ -13,8 +13,8 @@
       <!-- Header -->
       <div class="bg-[#00b14f] p-4 text-white font-bold flex justify-between items-center shadow-md">
         <div class="flex items-center gap-2">
-            <div class="w-10 h-10 rounded-full overflow-hidden border-2 border-white bg-white">
-                <img :src="aiImageUrl" alt="AI" class="w-full h-full object-cover" />
+            <div class="w-10 h-10 rounded-full overflow-hidden border-2 border-white bg-white relative">
+                <img :src="aiImageUrl" @error="e => e.target.src='https://cdn-icons-png.flaticon.com/512/4712/4712027.png'" alt="AI" class="w-full h-full object-cover animate-pulse-slow" />
             </div>
             <div class="flex flex-col">
                 <span>Trợ lý AI</span>
