@@ -64,6 +64,7 @@ import { ref, nextTick, watch, computed } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
+import aiAvatar from '../assets/img/anh.logo/anh-AI.png';
 
 const isOpen = ref(false);
 const messages = ref([]);
@@ -72,10 +73,8 @@ const isLoading = ref(false);
 const messagesContainer = ref(null);
 const authStore = useAuthStore();
 
-// --- LẤY HÌNH ẢNH AI CHÍNH XÁC ---
-const aiImageUrl = computed(() => {
-    return new URL('../assets/img/anh.logo/anh-AI.png', import.meta.url).href;
-});
+// --- DÙNG ẢNH CỦA BẠN (ĐÃ IMPORT CHUẨN VITE) ---
+const aiImageUrl = ref(aiAvatar);
 
 const toggleChat = () => {
     isOpen.value = !isOpen.value;
