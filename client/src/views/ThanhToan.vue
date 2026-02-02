@@ -66,35 +66,27 @@
               <div class="pay-method" :class="{ active: paymentMethod === 'cash' }" @click="selectPayment('cash')">
                 <div class="radio-circle"></div><span>💵 Tiền mặt khi nhận hàng</span>
               </div>
-              <div class="pay-method" :class="{ active: paymentMethod === 'banking' }" @click="selectPayment('banking')">
+              <div class="pay-method" :class="{ active: paymentMethod === 'banking' }" @click="selectPayment('banking')">      
                 <div class="radio-circle"></div><span>🏦 Chuyển khoản</span>
               </div>
             </div>
-            
+
             <div v-if="paymentMethod === 'banking'" class="qr-container">
               <div v-if="paymentStatus === 'pending'" class="qr-pending">
                 <div class="qr-header">
-                   Quét mã để thanh toán 
-                   <span class="timer" :class="{'urgent': qrTimeLeft < 60}">Hết hạn sau: {{ formatTime(qrTimeLeft) }}</span>
+                   Quét mã để thanh toán
+                   <span class="timer" :class="{'urgent': qrTimeLeft < 60}">Hết hạn sau: {{ formatTime(qrTimeLeft) }}</span>   
                 </div>
                 <div class="qr-body">
                    <img :src="qrCodeUrl" alt="QR Code" class="qr-img" />
                    <div class="qr-details">
                       <p class="qr-note">Tổng tiền: <strong class="price-highlight">{{ formatCurrency(finalTotal) }}</strong></p>
-                      <p class="qr-note">Nội dung CK: <strong class="code-highlight">{{ randomOrderCode }}</strong></p>
+                      <p class="qr-note">Nội dung CK: <strong class="code-highlight">{{ randomOrderCode }}</strong></p>        
                    </div>
                    <button class="confirm-paid-btn" @click="handleConfirmPaid">
                      ✅ Tôi đã chuyển khoản xong
                    </button>
                    <button class="refresh-qr" @click="generateNewQR">🔄 Lấy mã mới</button>
-                   
-                   <div class="dev-tools">
-                      <p class="dev-title">⚠️ Công cụ Test (Dành cho Dev)</p>
-                      <button @click="toggleSimulateBank" :class="{'active': isMoneyReceived}">
-                          {{ isMoneyReceived ? 'TRẠNG THÁI: ĐÃ NHẬN TIỀN (ON)' : 'TRẠNG THÁI: CHƯA NHẬN TIỀN (OFF)' }}
-                      </button>
-                      <p class="dev-hint">*Bấm vào nút trên để bật chế độ "Đã nhận tiền" thì mới thanh toán thành công được.</p>
-                   </div>
                    <p class="hint-text">*Hệ thống tự động cập nhật khi nhận tiền</p>
                 </div>
               </div>
@@ -120,7 +112,7 @@
             <div v-if="items.length > 0" class="order-items-list">
               <div v-for="item in items" :key="item.id" class="summary-item">
                 <div class="item-qty">{{ item.quantity }}x</div>
-                <div class="item-name">{{ item.name }} <span v-if="item.note" class="item-note">({{ item.note }})</span></div>
+                <div class="item-name">{{ item.name }} <span v-if="item.note" class="item-note">({{ item.note }})</span></div> 
                 <div class="item-price">{{ formatCurrency(item.price * item.quantity) }}</div>
               </div>
             </div>
@@ -132,7 +124,7 @@
              <div class="price-row discount" v-if="selectedShip === 'saver'"><span>Khuyến mãi vận chuyển</span><span>-14.000₫</span></div>
             <div class="divider"></div>
             <div class="total-row"><span>Tổng cộng</span><span class="total-price">{{ formatCurrency(finalTotal) }}</span></div>
-            
+
             <button class="place-order-btn" @click="submitOrder" :disabled="dangXuLy || items.length === 0">
                {{ dangXuLy ? 'ĐANG XỬ LÝ...' : 'ĐẶT ĐƠN HÀNG' }}
             </button>
@@ -140,10 +132,10 @@
         </div>
       </div>
     </div>
-    
+
     <div v-if="showMapModal" class="map-modal-overlay" @click.self="closeMap">
       <div class="map-modal-content">
-        <div class="map-header"><h3>Chọn vị trí giao hàng</h3><button class="close-map-btn" @click="closeMap">×</button></div>
+        <div class="map-header"><h3>Chọn vị trí giao hàng</h3><button class="close-map-btn" @click="closeMap">×</button></div> 
         <div class="map-body">
           <div id="map-selection" style="width: 100%; height: 400px; background: #eee;"></div>
           <div class="selected-address-bar" v-if="tempSelectedAddress">
@@ -169,8 +161,8 @@ export default {
   name: "ThanhToan",
   setup() {
     const router = useRouter();
-    
-    const socket = io(SOCKET_URL); 
+
+    const socket = io(SOCKET_URL);
 
     const items = ref([]);
     const shopInfo = ref(null);
@@ -179,21 +171,20 @@ export default {
     const showMapModal = ref(false);
     const tempSelectedAddress = ref('');
     const dangXuLy = ref(false);
-    
+
     // Tọa độ mặc định người nhận (Hà Nội)
-    const selectedCoords = ref({ lat: 21.0285, lng: 105.8542 }); 
-    
+    const selectedCoords = ref({ lat: 21.0285, lng: 105.8542 });
+
     let mapInstance = null;
     let markerInstance = null;
-    
-    const bankId = 'MB'; 
-    const accountNo = '0396222614'; 
+
+    const bankId = 'MB';
+    const accountNo = '0396222614';
 
     const randomOrderCode = ref('');
-    const qrTimeLeft = ref(600); 
+    const qrTimeLeft = ref(600);
     let timerInterval = null;
-    const paymentStatus = ref('pending'); 
-    const isMoneyReceived = ref(false);
+    const paymentStatus = ref('pending');
 
     const userInfo = reactive({ name: '', phone: '', address: '', username: '' });
     const shippingRates = { priority: 36000, fast: 28000, saver: 22000 };
@@ -206,7 +197,7 @@ export default {
       if (!document.getElementById('leaflet-js')) {
         const script = document.createElement('script'); script.id = 'leaflet-js'; script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; document.head.appendChild(script);
       }
-      
+
       const storedItems = localStorage.getItem('tempCart');
       if (storedItems) {
           items.value = JSON.parse(storedItems);
@@ -219,7 +210,7 @@ export default {
               console.error("Lỗi tải thông tin quán:", err);
           }
       }
-      
+
       // [EDITED] Read from 'user' key as per Auth Store
       const storedUser = localStorage.getItem('user');
       if (storedUser) {
@@ -236,19 +227,25 @@ export default {
     const subTotal = computed(() => items.value.reduce((sum, item) => sum + (item.price * item.quantity), 0));
     const shipPrice = computed(() => shippingRates[selectedShip.value]);
     const finalTotal = computed(() => subTotal.value + shipPrice.value);
-    const formatCurrency = (val) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
+    const formatCurrency = (val) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);        
 
     const qrCodeUrl = computed(() => `https://img.vietqr.io/image/${bankId}-${accountNo}-qr_only.png?amount=${finalTotal.value}&addInfo=${randomOrderCode.value}`);
 
-    const generateNewQR = () => {
+    const generateNewQR = async () => {
       randomOrderCode.value = 'DH' + Math.floor(Math.random() * 1000000);
       paymentStatus.value = 'pending';
-      isMoneyReceived.value = false; 
       qrTimeLeft.value = 600;
+      
+      try {
+        await axios.post(`${API_BASE_URL}/api/payment/register`, { code: randomOrderCode.value });
+      } catch (e) {
+        console.error("Lỗi đăng ký mã thanh toán:", e);
+      }
+
       if (timerInterval) clearInterval(timerInterval);
       timerInterval = setInterval(() => {
-        if (qrTimeLeft.value > 0) qrTimeLeft.value--; 
-        else generateNewQR(); 
+        if (qrTimeLeft.value > 0) qrTimeLeft.value--;
+        else generateNewQR();
       }, 1000);
     };
 
@@ -262,17 +259,49 @@ export default {
       }
     };
 
-    const toggleSimulateBank = () => { isMoneyReceived.value = !isMoneyReceived.value; };
+    const checkPaymentStatus = async () => {
+        try {
+            const res = await axios.get(`${API_BASE_URL}/api/payment/check/${randomOrderCode.value}`);
+            if (res.data.paid) {
+                paymentStatus.value = 'success';
+                clearInterval(timerInterval);
+                return true;
+            }
+        } catch (e) {
+            console.error("Lỗi kiểm tra thanh toán:", e);
+        }
+        return false;
+    };
 
     const handleConfirmPaid = () => {
         paymentStatus.value = 'processing';
-        // Simulate checking with bank...
-        setTimeout(() => {
-            // AUTO-SUCCESS for demo purposes
-            isMoneyReceived.value = true; 
-            paymentStatus.value = 'success';
-            clearInterval(timerInterval);
-        }, 3000);
+        
+        // Kiểm tra ngay lập tức
+        checkPaymentStatus().then(paid => {
+             if(paid) return;
+             
+             // Nếu chưa có, poll mỗi 2 giây
+             const checkInterval = setInterval(async () => {
+                 if (paymentStatus.value !== 'processing') {
+                     clearInterval(checkInterval);
+                     return;
+                 }
+                 
+                 const isPaid = await checkPaymentStatus();
+                 if (isPaid) {
+                     clearInterval(checkInterval);
+                 }
+             }, 2000);
+             
+             // Timeout sau 60s nếu không thấy tiền (tránh treo vô hạn)
+             setTimeout(() => {
+                 if (paymentStatus.value === 'processing') {
+                     alert("Hệ thống chưa nhận được tiền. Vui lòng thử lại hoặc liên hệ hỗ trợ.");
+                     paymentStatus.value = 'pending';
+                     clearInterval(checkInterval);
+                 }
+             }, 60000);
+        });
     };
 
     const formatTime = (seconds) => {
@@ -282,14 +311,14 @@ export default {
     };
 
     // --- MAP LOGIC ---
-    const setHardLocation = () => { 
-      userInfo.address = "Trường Cao Đẳng Công Nghệ Cao Hà Nội"; 
-      selectedCoords.value = { lat: 21.0464, lng: 105.7480 }; 
-      alert("Đã chọn vị trí: Trường Cao Đẳng Công Nghệ Cao Hà Nội"); 
+    const setHardLocation = () => {
+      userInfo.address = "Trường Cao Đẳng Công Nghệ Cao Hà Nội";
+      selectedCoords.value = { lat: 21.0464, lng: 105.7480 };
+      alert("Đã chọn vị trí: Trường Cao Đẳng Công Nghệ Cao Hà Nội");
     };
 
-    const openMapModal = () => { 
-      showMapModal.value = true; 
+    const openMapModal = () => {
+      showMapModal.value = true;
       nextTick(() => {
         initSelectionMap();
       });
@@ -299,16 +328,16 @@ export default {
         if (mapInstance) {
             mapInstance.remove();
         }
-        
+
         mapInstance = L.map('map-selection').setView([selectedCoords.value.lat, selectedCoords.value.lng], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance);
-        
+
         markerInstance = L.marker([selectedCoords.value.lat, selectedCoords.value.lng], { draggable: true }).addTo(mapInstance);
-        
+
         const updateAddr = async (lat, lng) => {
             selectedCoords.value = { lat, lng };
             try {
-                const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);  
                 tempSelectedAddress.value = res.data.display_name;
             } catch (e) {
                 tempSelectedAddress.value = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
@@ -333,19 +362,19 @@ export default {
         showMapModal.value = false;
     };
 
-    const closeMap = () => { 
-      showMapModal.value = false; 
+    const closeMap = () => {
+      showMapModal.value = false;
       if (mapInstance) {
           mapInstance.remove();
           mapInstance = null;
       }
     };
-    
+
     // --- HÀM GỬI ĐƠN HÀNG (ĐÃ SỬA) ---
     const submitOrder = async () => {
        if(items.value.length === 0) return alert("Giỏ hàng trống!");
        if(!userInfo.address) return alert("Vui lòng nhập địa chỉ!");
-       
+
        if (paymentMethod.value === 'banking' && paymentStatus.value !== 'success') {
            return alert("⚠️ Bạn chưa hoàn tất thanh toán chuyển khoản!");
        }
@@ -407,14 +436,14 @@ export default {
                    lat_tra: selectedCoords.value.lat,
                    lng_tra: selectedCoords.value.lng
                };
-               
+
                console.log("Đặt hàng thành công:", socketData);
                socket.emit('place_order', socketData);
 
                // 4. Xóa giỏ hàng & Chuyển hướng
                alert("Đặt hàng thành công! Đang tìm tài xế...");
                localStorage.removeItem('tempCart');
-               
+
                router.push('/theodoidonhang');
            }
 
@@ -429,11 +458,10 @@ export default {
     return {
       items, userInfo, selectedShip, paymentMethod,
       subTotal, finalTotal, shipPrice, formatCurrency,
-      setHardLocation, submitOrder, selectPayment, 
+      setHardLocation, submitOrder, selectPayment,
       qrCodeUrl, qrTimeLeft, formatTime, generateNewQR, randomOrderCode,
       showMapModal, openMapModal, closeMap, tempSelectedAddress, confirmMapSelection,
-      paymentStatus, handleConfirmPaid, 
-      isMoneyReceived, toggleSimulateBank,
+      paymentStatus, handleConfirmPaid,
       selectedCoords, dangXuLy
     };
   }
@@ -473,7 +501,7 @@ export default {
 .close-map-btn { background: none; border: none; font-size: 28px; cursor: pointer; line-height: 1; }
 .map-body { flex: 1; display: flex; flex-direction: column; position: relative; padding: 0; }
 .interactive-map-container { flex: 1; width: 100%; background: #eee; }
-.selected-address-bar { padding: 10px 20px; background: white; border-top: 1px solid #eee; font-weight: 500; color: #333; }
+.selected-address-bar { padding: 10px 20px; background: white; border-top: 1px solid #eee; font-weight: 500; color: #333; }    
 .map-footer { padding: 15px; background: #f9f9f9; border-top: 1px solid #eee; text-align: center; }
 .confirm-map-btn { background: #00b14f; color: white; border: none; padding: 12px 30px; font-weight: bold; font-size: 16px; border-radius: 6px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,177,79,0.3); }
 .confirm-map-btn:disabled { background: #ccc; cursor: not-allowed; box-shadow: none; }
@@ -515,13 +543,6 @@ export default {
 .refresh-qr { background: #555; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; transition: 0.2s; }
 .refresh-qr:hover { background: #333; }
 .hint-text { font-size: 12px; color: #888; margin-top: 10px; font-style: italic; }
-
-/* DEV TOOLS */
-.dev-tools { margin-top: 20px; padding: 15px; border: 2px dashed #f39c12; background: #fcf8e3; border-radius: 8px; width: 100%; max-width: 350px; }
-.dev-title { font-weight: bold; color: #d35400; margin-bottom: 5px; font-size: 13px; }
-.dev-hint { font-size: 11px; color: #7f8c8d; margin-top: 5px; font-style: italic; }
-.dev-tools button { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: #e74c3c; color: white; border-radius: 4px; font-size: 12px; font-weight: bold; width: 100%; }
-.dev-tools button.active { background: #27ae60; border-color: #27ae60; }
 
 /* SPINNER & SUCCESS */
 .qr-processing { display: flex; flex-direction: column; align-items: center; justify-content: center; animation: fadeIn 0.5s; }
