@@ -123,7 +123,12 @@
             <div class="price-row"><span>Phí giao hàng</span><span>{{ formatCurrency(shipPrice) }}</span></div>
              <div class="price-row discount" v-if="selectedShip === 'saver'"><span>Khuyến mãi vận chuyển</span><span>-14.000₫</span></div>
             <div class="divider"></div>
-            <div class="total-row"><span>Tổng cộng</span><span class="total-price">{{ formatCurrency(finalTotal) }}</span></div>
+            <div class="total-row">
+              <span>Tổng cộng</span>
+              <span class="total-price" :class="{'text-green-500': paymentStatus === 'success'}">
+                {{ paymentStatus === 'success' ? '0đ (Đã thanh toán)' : formatCurrency(finalTotal) }}
+              </span>
+            </div>
 
             <button class="place-order-btn" @click="submitOrder" :disabled="dangXuLy || items.length === 0">
                {{ dangXuLy ? 'ĐANG XỬ LÝ...' : 'ĐẶT ĐƠN HÀNG' }}
