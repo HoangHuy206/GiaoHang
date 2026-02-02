@@ -178,8 +178,8 @@ export default {
     let mapInstance = null;
     let markerInstance = null;
 
-    const bankId = 'MB';
-    const accountNo = '0396222614';
+    const bankId = 'ICB';
+    const accountNo = '101882796072';
 
     const randomOrderCode = ref('');
     const qrTimeLeft = ref(600);
@@ -231,47 +231,133 @@ export default {
 
     const qrCodeUrl = computed(() => `https://img.vietqr.io/image/${bankId}-${accountNo}-qr_only.png?amount=${finalTotal.value}&addInfo=${randomOrderCode.value}`);
 
-    const generateNewQR = async () => {
-      randomOrderCode.value = 'DH' + Math.floor(Math.random() * 1000000);
-      paymentStatus.value = 'pending';
-      qrTimeLeft.value = 600;
-      
-      try {
-        await axios.post(`${API_BASE_URL}/api/payment/register`, { code: randomOrderCode.value });
-      } catch (e) {
-        console.error("Lỗi đăng ký mã thanh toán:", e);
-      }
+        const checkPaymentStatus = async () => {
 
-      if (timerInterval) clearInterval(timerInterval);
-      timerInterval = setInterval(() => {
-        if (qrTimeLeft.value > 0) qrTimeLeft.value--;
-        else generateNewQR();
-      }, 1000);
-    };
+            try {
 
-    const selectPayment = (method) => {
-      paymentMethod.value = method;
-      if (method === 'banking') {
-          generateNewQR();
-      } else {
-          clearInterval(timerInterval);
-          paymentStatus.value = 'pending';
-      }
-    };
+                const res = await axios.get(`${API_BASE_URL}/api/payment/check/${randomOrderCode.value}`);
 
-    const checkPaymentStatus = async () => {
-        try {
-            const res = await axios.get(`${API_BASE_URL}/api/payment/check/${randomOrderCode.value}`);
-            if (res.data.paid) {
-                paymentStatus.value = 'success';
-                clearInterval(timerInterval);
-                return true;
+                if (res.data.paid) {
+
+                    paymentStatus.value = 'success';
+
+                    // Dừng đếm ngược và dừng polling
+
+                    if (timerInterval) clearInterval(timerInterval);
+
+                    if (checkInterval) clearInterval(checkInterval);
+
+                    return true;
+
+                }
+
+            } catch (e) {
+
+                console.error("Lỗi kiểm tra thanh toán:", e);
+
             }
-        } catch (e) {
-            console.error("Lỗi kiểm tra thanh toán:", e);
-        }
-        return false;
-    };
+
+            return false;
+
+        };
+
+    
+
+        let checkInterval = null;
+
+    
+
+        const startPollingPayment = () => {
+
+            if (checkInterval) clearInterval(checkInterval);
+
+            checkInterval = setInterval(async () => {
+
+                const isPaid = await checkPaymentStatus();
+
+                if (isPaid) {
+
+                    clearInterval(checkInterval);
+
+                }
+
+            }, 3000); // Kiểm tra mỗi 3 giây
+
+        };
+
+    
+
+        const generateNewQR = async () => {
+
+          randomOrderCode.value = 'DH' + Math.floor(Math.random() * 1000000);
+
+          paymentStatus.value = 'pending';
+
+          qrTimeLeft.value = 600;
+
+          
+
+          try {
+
+            await axios.post(`${API_BASE_URL}/api/payment/register`, { code: randomOrderCode.value });
+
+          } catch (e) {
+
+            console.error("Lỗi đăng ký mã thanh toán:", e);
+
+          }
+
+    
+
+          if (timerInterval) clearInterval(timerInterval);
+
+          timerInterval = setInterval(() => {
+
+            if (qrTimeLeft.value > 0) qrTimeLeft.value--;
+
+            else generateNewQR();
+
+          }, 1000);
+
+    
+
+          // Tự động kiểm tra thanh toán ngay lập tức
+
+          startPollingPayment();
+
+        };
+
+    
+
+        onUnmounted(() => { 
+
+            if (timerInterval) clearInterval(timerInterval);
+
+            if (checkInterval) clearInterval(checkInterval);
+
+        });
+
+    
+
+        const selectPayment = (method) => {
+
+          paymentMethod.value = method;
+
+          if (method === 'banking') {
+
+              generateNewQR();
+
+          } else {
+
+              if (timerInterval) clearInterval(timerInterval);
+
+              if (checkInterval) clearInterval(checkInterval);
+
+              paymentStatus.value = 'pending';
+
+          }
+
+        };
 
     const handleConfirmPaid = () => {
         paymentStatus.value = 'processing';
