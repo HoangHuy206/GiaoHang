@@ -283,35 +283,39 @@ app.post('/api/chat', async (req, res) => {
 // KHU VỰC QUAN TRỌNG: PAYMENT WEBHOOK (ĐÃ SỬA & GIỮ LOGIC)
 // ============================================================
 app.post('/api/payment/webhook', async (req, res) => {
-    // 1. Nhận dữ liệu từ SePay
-    const { content, amount, description, orderCode } = req.body;
-    console.log("🔔 Webhook Received:", JSON.stringify(req.body));
-
-    // 2. Phân tích nội dung để tìm mã đơn hàng (VD: SEVQR DH123 -> Lấy DH123)
-    let detectedOrderCode = null;
-    const incomingContent = content || description || orderCode || "";
-
-    // Regex tìm chữ DH kèm số (DH123, DH_123,...) bất kể chữ hoa thường
-    const match = incomingContent.match(/(DH[0-9_]+)/i); 
-    
-    if (match) {
-        detectedOrderCode = match[1].toUpperCase(); 
-    } else if (orderCode) {
-        detectedOrderCode = orderCode;
-    }
-
-    if (!detectedOrderCode) {
-        console.log("❌ Không tìm thấy mã đơn hàng trong nội dung:", incomingContent);
-        return res.json({ success: false, message: "No order code found" });
-    }
-
-    // 3. Lấy ID số (VD: DH123 -> 123)
-    const orderIdNum = detectedOrderCode.replace(/[^0-9]/g, '');
-
-    console.log(`✅ Phát hiện đơn hàng: ${detectedOrderCode} (ID: ${orderIdNum}) - Tiền: ${amount}`);
-
-    const connection = await pool.getConnection();
+    let connection;
     try {
+        const { content, amount, description, orderCode } = req.body;
+        
+        // LOG CHI TIẾT ĐỂ DEBUG
+        console.log("------------------------------------------------");
+        console.log("🔔 [Webhook] Incoming Request from SePay:");
+        console.log(JSON.stringify(req.body, null, 2)); 
+        console.log("------------------------------------------------");
+
+        // Tìm mã đơn hàng trong nội dung chuyển khoản
+        let detectedOrderCode = null;
+        const incomingContent = content || description || orderCode || "";
+        
+        // Regex tìm chuỗi DHxxxx
+        const match = incomingContent.match(/(DH\s?\d+)/i); 
+        if (match) {
+            detectedOrderCode = match[1].replace(/\s/g, '').toUpperCase();
+        } else {
+            if (orderCode) detectedOrderCode = orderCode;
+        }
+
+        if (!detectedOrderCode) {
+            console.error("❌ [Webhook] Failed: No order code found in content:", incomingContent);
+            return res.status(400).json({ success: false, message: "No order code found in content" });
+        }
+
+        console.log(`✅ [Webhook] Identified Order: ${detectedOrderCode}, Amount: ${amount}`);
+
+        // Trích xuất ID số từ mã DH (ví dụ DH123 -> 123) để update vào DB
+        const orderIdNum = parseInt(detectedOrderCode.replace(/\D/g, ''));
+
+        connection = await pool.getConnection();
         await connection.beginTransaction();
 
         // 4. Lưu lịch sử giao dịch
@@ -327,15 +331,13 @@ app.post('/api/payment/webhook', async (req, res) => {
                 [orderIdNum]
             );
 
-            // 6. BẮN SOCKET CHO FRONTEND (Để màn hình tự chuyển)
-            // Bắn event 'payment_success' cho phòng của đơn hàng đó
+            // 6. BẮN SOCKET CHO FRONTEND
             io.to(`order_${orderIdNum}`).emit('payment_success', { 
                 orderId: orderIdNum,
                 status: 'finding_driver',
                 message: 'Thanh toán thành công'
             });
-
-            // Bắn thêm event update status chung
+            
             io.to(`order_${orderIdNum}`).emit('status_update', { 
                 status: 'finding_driver', 
                 orderId: orderIdNum 
@@ -348,11 +350,11 @@ app.post('/api/payment/webhook', async (req, res) => {
         res.json({ success: true });
 
     } catch (err) {
-        await connection.rollback();
-        console.error("❌ DB Error Webhook:", err);
-        res.status(500).json({ success: false });
+        if (connection) await connection.rollback();
+        console.error("❌ Webhook Error:", err);
+        res.status(500).json({ success: false, error: err.message });
     } finally {
-        connection.release();
+        if (connection) connection.release();
     }
 });
 
