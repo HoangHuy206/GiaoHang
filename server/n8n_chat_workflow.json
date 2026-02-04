@@ -1,0 +1,106 @@
+{
+  "name": "GiaoHangTanNoi AI Chat",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat-ai",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        460,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "=Bạn là nhân viên CSKH thân thiện của ứng dụng \"GiaoHangTanNoi\".\n\nTHÔNG TIN NGỮ CẢNH:\n- Thời gian hiện tại: {{ $json.context.currentTime }}\n- Danh sách món ăn (Menu): {{ $json.context.menu }}\n- Lịch sử đơn hàng gần đây của khách: {{ $json.context.orderHistory }}\n\nNHIỆM VỤ:\nTrả lời câu hỏi của khách hàng: \"{{ $json.chatInput }}\"\n\nQUY TẮC:\n1. Trả lời ngắn gọn, tự nhiên, dùng emoji vui vẻ.\n2. Nếu khách hỏi gợi ý món ăn, hãy dựa vào thời gian (sáng/trưa/chiều/tối) và Menu để tư vấn. Kèm theo giá và tên quán.\n3. Nếu khách hỏi về đơn hàng, hãy tra cứu trong \"Lịch sử đơn hàng\" và báo trạng thái chính xác.\n4. Nếu khách hỏi thực đơn/menu hoặc \"có những món gì\" tại một quán cụ thể, hãy liệt kê các món.\n5. Nếu khách hỏi ngoài lề, khéo léo từ chối.\n6. Đừng bao giờ lộ ra bạn là AI hoặc nhắc đến \"JSON data\"."
+        }
+      },
+      "id": "ai-agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        680,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {}
+      },
+      "id": "google-gemini",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        680,
+        560
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YOUR_CREDENTIAL_ID_HERE",
+          "name": "Google Gemini Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $json.output } }}",
+        "options": {}
+      },
+      "id": "respond-node",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        900,
+        340
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

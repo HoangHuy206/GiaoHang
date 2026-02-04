@@ -11,20 +11,34 @@ const nodemailer = require('nodemailer');
 const compression = require('compression');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { MOCK_SHOPS, MOCK_PRODUCTS } = require('./mockData');
+const axios = require('axios'); // Added for n8n
 
 const app = express();
 
-// Initialize Gemini
-let model = null;
-if (process.env.GEMINI_API_KEY) {
-    try {
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    } catch (e) {
-        console.error("Gemini Init Error:", e.message);
+// Initialize Gemini (Deprecated in favor of Groq)
+// let model = null; ...
+
+// Helper function for Groq AI
+async function callGroqAI(prompt) {
+    if (!process.env.GROQ_API_KEY) {
+        throw new Error("GROQ_API_KEY is missing");
     }
-} else {
-    console.warn("⚠️ Warning: GEMINI_API_KEY is missing. AI Chat will use fallback mode.");
+    try {
+        const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+            messages: [{ role: "user", content: prompt }],
+            model: "llama-3.3-70b-versatile",
+            temperature: 0.7
+        }, {
+            headers: {
+                'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        return response.data.choices[0].message.content;
+    } catch (error) {
+        console.error("Groq API Error:", error.response ? error.response.data : error.message);
+        throw error;
+    }
 }
 
 const server = http.createServer(app);
@@ -40,265 +54,138 @@ const transporter = nodemailer.createTransport({
         pass: process.env.EMAIL_PASS 
     }
 });
+
 const io = new Server(server, {
     cors: {
-        origin: "*", // Allow all for dev
+        origin: "*",
         methods: ["GET", "POST"]
     }
 });
 
-// Store online drivers' locations
-const onlineDrivers = new Map(); // socketId -> { driverId, lat, lng }
+const onlineDrivers = new Map();
 
-// Haversine formula to calculate distance in km
 function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of the earth in km
+    const R = 6371;
     const dLat = deg2rad(lat2 - lat1);
     const dLon = deg2rad(lon2 - lon1);
-    const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in km
+    const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(deg2rad(lat1))*Math.cos(deg2rad(lat2)) * Math.sin(dLon/2)*Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
 }
 
-function deg2rad(deg) {
-    return deg * (Math.PI / 180);
-}
+function deg2rad(deg) { return deg * (Math.PI/180); }
 
 app.use(cors());
 app.use(express.json());
 
-// --- File Upload Config ---
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const uploadDir = path.join(__dirname, 'uploads');
-        if (!fs.existsSync(uploadDir)){
-            fs.mkdirSync(uploadDir);
-        }
+        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
+        cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
     }
 });
-
 const upload = multer({ storage: storage });
 
-// Serve static files from uploads with caching
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
-    maxAge: '1d',
-    etag: true
-}));
-
-// Serve Frontend static files (Production) with caching
-app.use(express.static(path.join(__dirname, '../client/dist'), {
-    maxAge: '1h',
-    etag: true
-}));
-
-// Add a simple health check route
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { maxAge: '1d', etag: true }));
+app.use(express.static(path.join(__dirname, '../client/dist'), { maxAge: '1h', etag: true }));
 app.get('/api/health', (req, res) => res.send('OK'));
 
-// --- Socket.io Logic ---
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
-
-    // Join specific rooms based on role/id
-    socket.on('join_room', (room) => {
-        socket.join(room);
-        console.log(`Socket ${socket.id} joined ${room}`);
-    });
-
-    // Driver updates general location (for matching orders)
+    socket.on('join_room', (room) => socket.join(room));
     socket.on('update_driver_location', (data) => {
-        // data: { driverId, lat, lng }
         onlineDrivers.set(socket.id, { ...data, socketId: socket.id });
-        console.log(`Driver ${data.driverId} updated location: ${data.lat}, ${data.lng}`);
     });
-
-    // Driver updates location for a specific order
-    socket.on('driver_location', (data) => {
-        // data: { driverId, orderId, lat, lng }
-        io.to(`order_${data.orderId}`).emit('update_driver_location', data);
-    });
-
-    // Handle new order placement from client
-    socket.on('place_order', (orderData) => {
-        console.log('New order received, notifying shop:', orderData.shop_id);
-        // Only notify the shop initially. 
-        // Drivers are notified when Shop confirms (status -> finding_driver)
-        io.to(`shop_${orderData.shop_id}`).emit('new_order', orderData);
-    });
-    
-    // Handle driver_status_change
-    socket.on('driver_status_change', (data) => {
-         console.log('Driver status:', data);
-         if (data.status === 'offline') {
-             onlineDrivers.delete(socket.id);
-         }
-    });
-
-    // --- Chat Logic ---
+    socket.on('driver_location', (data) => io.to(`order_${data.orderId}`).emit('update_driver_location', data));
+    socket.on('place_order', (data) => io.to(`shop_${data.shop_id}`).emit('new_order', data));
+    socket.on('driver_status_change', (data) => { if (data.status === 'offline') onlineDrivers.delete(socket.id); });
     socket.on('send_message', async (data) => {
-        // data: { orderId, senderId, content }
         const { orderId, senderId, content } = data;
         try {
-            await pool.query(
-                'INSERT INTO messages (order_id, sender_id, content) VALUES (?, ?, ?)',
-                [orderId, senderId, content]
-            );
-            
-            // Broadcast the message to the order room
-            io.to(`order_${orderId}`).emit('receive_message', {
-                orderId,
-                senderId,
-                content,
-                created_at: new Date()
-            });
-
-            console.log(`Message from ${senderId} in order ${orderId}: ${content}`);
-        } catch (err) {
-            console.error('Error saving message:', err);
-        }
+            await pool.query('INSERT INTO messages (order_id, sender_id, content) VALUES (?, ?, ?)', [orderId, senderId, content]);
+            io.to(`order_${orderId}`).emit('receive_message', { orderId, senderId, content, created_at: new Date() });
+        } catch (err) { console.error(err); }
     });
-
-    // Typing indicators
-    socket.on('typing', (data) => {
-        // data: { orderId, userId }
-        socket.to(`order_${data.orderId}`).emit('typing', data);
-    });
-
-    socket.on('stop_typing', (data) => {
-        socket.to(`order_${data.orderId}`).emit('stop_typing', data);
-    });
-
-    socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
-        onlineDrivers.delete(socket.id);
-    });
+    socket.on('typing', (data) => socket.to(`order_${data.orderId}`).emit('typing', data));
+    socket.on('stop_typing', (data) => socket.to(`order_${data.orderId}`).emit('stop_typing', data));
+    socket.on('disconnect', () => onlineDrivers.delete(socket.id));
 });
 
-// --- AI Chat Route ---
+// --- AI Chat Route (Groq) ---
 app.post('/api/chat', async (req, res) => {
     const { message, userId } = req.body;
     let products = [];
-    
     try {
-        // 1. Lấy dữ liệu ngữ cảnh (Context)
-        // Lấy danh sách sản phẩm (chỉ lấy tên, giá và tên quán để tiết kiệm token)
-        const [rows] = await pool.query('SELECT p.name, p.price, s.name as shop_name FROM products p JOIN shops s ON p.shop_id = s.id');
+        const [rows] = await pool.query('SELECT p.id, p.name, p.price, p.image_url, s.name as shop_name FROM products p JOIN shops s ON p.shop_id = s.id');
         products = rows;
-        
-        // Lấy thông tin đơn hàng của user nếu đã đăng nhập
         let orderContext = "User chưa đăng nhập hoặc không có đơn hàng gần đây.";
         if (userId) {
-            const [orders] = await pool.query(`
-                SELECT o.id, o.status, o.total_price, o.delivery_address, u.full_name as driver_name 
-                FROM orders o 
-                LEFT JOIN users u ON o.driver_id = u.id
-                WHERE o.user_id = ? AND o.status != 'cancelled'
-                ORDER BY o.created_at DESC LIMIT 3
-            `, [userId]);
-            
-            if (orders.length > 0) {
-                orderContext = JSON.stringify(orders);
-            }
+            const [orders] = await pool.query(`SELECT o.id, o.status, o.total_price, o.delivery_address, u.full_name as driver_name FROM orders o LEFT JOIN users u ON o.driver_id = u.id WHERE o.user_id = ? AND o.status != 'cancelled' ORDER BY o.created_at DESC LIMIT 3`, [userId]);
+            if (orders.length > 0) orderContext = JSON.stringify(orders);
         }
-
-        // 2. Tạo Prompt (Câu lệnh cho AI)
         const currentTime = new Date().toLocaleString('vi-VN');
-        const prompt = `
-            Bạn là nhân viên CSKH thân thiện của ứng dụng "GiaoHangTanNoi".
-            
-            THÔNG TIN NGỮ CẢNH:
-            - Thời gian hiện tại: ${currentTime}
-            - Danh sách món ăn (Menu): ${JSON.stringify(products)}
-            - Lịch sử đơn hàng gần đây của khách: ${orderContext}
-
-            NHIỆM VỤ:
-            Trả lời câu hỏi của khách hàng: "${message}"
-
-            QUY TẮC:
-            1. Trả lời ngắn gọn, tự nhiên, dùng emoji vui vẻ.
-            2. Nếu khách hỏi gợi ý món ăn, hãy dựa vào thời gian (sáng/trưa/chiều/tối) và Menu để tư vấn. Kèm theo giá và tên quán.
-            3. Nếu khách hỏi về đơn hàng, hãy tra cứu trong "Lịch sử đơn hàng" và báo trạng thái chính xác.
-            4. Nếu khách hỏi thực đơn/menu hoặc "có những món gì" tại một quán cụ thể (ví dụ: "Quán Phở Gà có gì?"), hãy liệt kê TẤT CẢ các món của quán đó kèm giá.
-            5. Nếu khách hỏi ngoài lề (không liên quan ăn uống/giao hàng), hãy khéo léo từ chối và hướng về chủ đề chính.
-            6. Đừng bao giờ lộ ra bạn là AI hoặc nhắc đến "JSON data". Hãy đóng vai người thật.
-        `;
-
-        // 3. Gửi cho Gemini
+        const productListForAI = products.map(p => ({ name: p.name, price: p.price, shop: p.shop_name }));
+        
         let text = "";
-        if (model) {
-            const result = await model.generateContent(prompt);
-            const response = result.response;
-            text = response.text();
-        } else {
-            throw new Error("AI Model not initialized (Missing API Key)");
+        const n8nUrl = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/chat-ai';
+        
+        try {
+            console.log(`Attempting n8n: ${n8nUrl}`);
+            const n8nResponse = await axios.post(n8nUrl, { 
+                chatInput: message, 
+                userId: userId || 'guest', 
+                context: { currentTime, menu: JSON.stringify(productListForAI), orderHistory: orderContext } 
+            }, { timeout: 60000 });
+
+            console.log("n8n Raw Response:", JSON.stringify(n8nResponse.data));
+
+            let responseData = n8nResponse.data;
+            
+            if (Array.isArray(responseData) && responseData.length > 0) {
+                responseData = responseData[0];
+            }
+
+            if (responseData && (responseData.output || responseData.text || responseData.message || responseData.content)) {
+                text = responseData.output || responseData.text || responseData.message || responseData.content;
+            } else if (typeof responseData === 'string') {
+                text = responseData;
+            } else {
+                text = JSON.stringify(responseData);
+            }
+        } catch (e) { 
+            console.log("n8n Error:", e.message);
+            text = "Hệ thống AI đang bận. Nếu cần hỗ trợ gấp, vui lòng liên hệ email: haiquan2482006@gmail.com";
         }
 
-        res.json({ reply: text });
+        if (typeof text === 'object') text = JSON.stringify(text);
+        
+        // Debug: Nếu text rỗng, báo rõ ràng để người dùng biết
+        if (!text || text.trim() === "" || text === "{}") {
+             text = "⚠️ n8n trả về kết quả rỗng. Vui lòng kiểm tra Node 'Respond to Webhook' trong n8n. Đảm bảo nó trả về JSON có trường 'output', 'text' hoặc 'message'.";
+        }
+        
+        const safeText = String(text || "");
+        const suggestedProducts = products.filter(p => safeText.toLowerCase().includes(p.name.toLowerCase()));
+        res.json({ reply: safeText, suggestedProducts });
 
     } catch (err) {
         console.error("AI Error:", err);
-        
-        // Smart Fallback Logic
-        const msg = message ? message.toLowerCase() : "";
-        let reply = "Hệ thống AI đang bảo trì, nhưng mình vẫn có thể giúp bạn tra cứu Menu! Bạn thử hỏi 'Menu Tocotoco' hoặc 'Gợi ý món ăn' xem sao nhé? 🤖";
-
-        // Dữ liệu giả lập phòng khi DB lỗi
-        if (!products || products.length === 0) {
-            products = MOCK_PRODUCTS; // Use Global Mock Data
-        }
-
-        // 1. Kiểm tra xem tên quán có trong tin nhắn không (Ưu tiên cao nhất)
-        const uniqueShops = [...new Set(products.map(p => p.shop_name))];
-        const foundShop = uniqueShops.find(shop => msg.includes(shop.toLowerCase()));
-
-        if (foundShop) {
-             const shopItems = products.filter(p => p.shop_name === foundShop);
-             const list = shopItems.map(p => `- ${p.name}: ${new Intl.NumberFormat('vi-VN').format(p.price)}đ`).join('\n');
-             reply = `Menu của quán **${foundShop}** đây ạ:\n${list}\n\nMời bạn đặt món nhé! 📝`;
-        } 
-        // 2. Các từ khóa khác
-        else if (msg.includes('chào') || msg.includes('hi ') || msg.includes('hello')) {
-            reply = "Chào bạn! Mình là trợ lý ảo GiaoHangTanNoi. Bạn cần tìm món ngon gì hôm nay? 😋";
-        } else if (msg.includes('món') || msg.includes('ăn') || msg.includes('gợi ý') || msg.includes('đói')) {
-             const randomProduct = products[Math.floor(Math.random() * products.length)];
-             reply = `Nếu bạn chưa biết ăn gì, thử món **${randomProduct.name}** tại quán **${randomProduct.shop_name}** xem sao? Giá chỉ ${new Intl.NumberFormat('vi-VN').format(randomProduct.price)}đ thôi nè! 🍜`;
-        } else if (msg.includes('đơn hàng') || msg.includes('ship')) {
-             reply = "Bạn có thể kiểm tra trạng thái đơn hàng chi tiết trong mục 'Đơn hàng' nhé. 📦";
-        } else if (msg.includes('quán') || msg.includes('shop')) {
-             reply = `Mình có menu của các quán sau: ${uniqueShops.join(', ')}. Bạn muốn xem quán nào?`;
-        }
-
-        res.json({ reply });
+        res.json({ reply: `Lỗi hệ thống: ${err.message}`, suggestedProducts: [] });
     }
 });
 
-// ============================================================
-// KHU VỰC QUAN TRỌNG: PAYMENT WEBHOOK (ĐÃ SỬA & GIỮ LOGIC)
-// ============================================================
 app.post('/api/payment/webhook', async (req, res) => {
     let connection;
     try {
         const { content, amount, description, orderCode } = req.body;
-        
-        // LOG CHI TIẾT ĐỂ DEBUG
-        console.log("------------------------------------------------");
-        console.log("🔔 [Webhook] Incoming Request from SePay:");
-        console.log(JSON.stringify(req.body, null, 2)); 
-        console.log("------------------------------------------------");
-
-        // Tìm mã đơn hàng trong nội dung chuyển khoản
+        console.log("Webhook:", req.body);
         let detectedOrderCode = null;
         const incomingContent = content || description || orderCode || "";
-        
-        // Regex tìm chuỗi DHxxxx
-        const match = incomingContent.match(/(DH\s?\d+)/i); 
+        const match = incomingContent.match(/(DH\s?\d+)/i);
         if (match) {
             detectedOrderCode = match[1].replace(/\s/g, '').toUpperCase();
         } else {

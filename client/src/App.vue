@@ -3,6 +3,7 @@ import { useAuthStore } from './stores/auth';
 import { useRouter } from 'vue-router';
 import { computed } from 'vue';
 import CartDrawer from './components/CartDrawer.vue';
+import AI from './AI/AI.vue';
 import { cartBus } from './utils/cartBus';
 
 const auth = useAuthStore();
@@ -32,6 +33,7 @@ const openCart = () => {
     </main>
     <!-- Add CartDrawer here so it exists globally -->
     <CartDrawer />
+    <AI />
   </div>
 </template>
 

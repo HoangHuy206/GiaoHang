@@ -25,9 +25,25 @@
 
       <!-- Messages Area -->
       <div ref="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-        <div v-for="(msg, index) in messages" :key="index" :class="['flex', msg.isUser ? 'justify-end' : 'justify-start']">
+        <div v-for="(msg, index) in messages" :key="index" :class="['flex flex-col', msg.isUser ? 'items-end' : 'items-start']">
           <div :class="['max-w-[85%] rounded-2xl p-3 text-sm leading-relaxed', msg.isUser ? 'bg-[#00b14f] text-white rounded-br-none' : 'bg-white text-gray-800 border border-gray-200 shadow-sm rounded-bl-none']">
             {{ msg.text }}
+          </div>
+          
+          <!-- Suggested Products -->
+          <div v-if="msg.products && msg.products.length > 0" class="mt-2 w-full max-w-[90%] overflow-x-auto pb-2 flex gap-3 scrollbar-hide snap-x">
+             <div v-for="prod in msg.products" :key="prod.id" class="snap-center min-w-[140px] w-[140px] bg-white rounded-xl border border-gray-100 shadow-md overflow-hidden flex flex-col transition-transform hover:scale-105">
+                <div class="h-28 w-full bg-gray-100 relative">
+                   <img :src="getFullImageUrl(prod.image_url)" class="w-full h-full object-cover" @error="e => e.target.src='https://via.placeholder.com/150'"/>
+                   <div class="absolute top-1 right-1 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-[#00b14f] shadow-sm">
+                      {{ formatPrice(prod.price) }}
+                   </div>
+                </div>
+                <div class="p-2 flex flex-col flex-1 bg-white">
+                   <h4 class="text-xs font-semibold text-gray-800 line-clamp-2 leading-tight mb-1" :title="prod.name">{{ prod.name }}</h4>
+                   <p class="text-[10px] text-gray-500 truncate">{{ prod.shop_name }}</p>
+                </div>
+             </div>
           </div>
         </div>
         <div v-if="isLoading" class="flex justify-start">
@@ -87,9 +103,19 @@ const scrollToBottom = async () => {
   }
 };
 
-const addMessage = (text, isUser = false) => {
-  messages.value.push({ text, isUser });
+const addMessage = (text, isUser = false, products = []) => {
+  messages.value.push({ text, isUser, products });
   scrollToBottom();
+};
+
+const formatPrice = (price) => {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+};
+
+const getFullImageUrl = (url) => {
+    if (!url) return 'https://via.placeholder.com/150';
+    if (url.startsWith('http')) return url;
+    return `${API_BASE_URL}${url}`;
 };
 
 const getGreeting = () => {
@@ -120,13 +146,19 @@ const processMessage = async (text) => {
         userId: authStore.user ? authStore.user.id : null
     };
     const response = await axios.post(`${API_BASE_URL}/api/chat`, payload);
-    if (response.data && response.data.reply) {
-        addMessage(response.data.reply);
+    
+    // Ưu tiên hiển thị reply từ server (dù là thông báo lỗi hay nội dung chat)
+    if (response.data && (response.data.reply || response.data.message)) {
+        const replyText = response.data.reply || response.data.message;
+        addMessage(replyText, false, response.data.suggestedProducts || []);
     } else {
-        addMessage('Hệ thống đang bảo trì một chút, bạn thử lại sau nhé! 🛠️');
+        // Nếu server trả về 200 OK nhưng không có reply, hiển thị toàn bộ data để debug
+        addMessage(`Server Response: ${JSON.stringify(response.data)}`);
     }
   } catch (err) {
-    addMessage('Oop! Có lỗi kết nối. Bạn kiểm tra lại mạng nhé. 🌐');
+    // Hiển thị lỗi thực tế từ server (nếu có response) hoặc lỗi mạng
+    const errorMsg = err.response?.data?.reply || err.response?.data?.error || err.message;
+    addMessage(`Lỗi: ${errorMsg}`);
   } finally {
     isLoading.value = false;
     scrollToBottom();
