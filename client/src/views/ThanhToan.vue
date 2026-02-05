@@ -444,27 +444,26 @@ export default {
 
            if (res.data.success) {
                const orderId = res.data.orderId;
-               const maDonHang = res.data.orderCode;
+               const maDonHang = res.data.orderCode; 
+               randomOrderCode.value = maDonHang; // Dùng mã Dxxx thật từ Server
 
                if (paymentMethod.value === 'banking') {
-                   // Hiện QR với mã thật
+                   // Hiện QR với mã thật Dxxx
                    await generateNewQR(orderId, maDonHang);
                    alert("Đơn hàng đã được lưu. Vui lòng thanh toán qua mã QR phía dưới.");
-                   // Cuộn xuống
                    nextTick(() => {
                        const el = document.querySelector('.qr-container');
                        if (el) el.scrollIntoView({ behavior: 'smooth' });
                    });
                } else {
+                   // Tiền mặt: Gửi thông báo socket và chuyển trang
                    const socketData = {
                        ma_don_hang: maDonHang,
                        orderId: orderId,
-                       tai_khoan_khach: userInfo.username || 'guest',
                        ten_khach_hang: userInfo.name,
                        ten_mon_an: items.value.map(item => `${item.name} (${item.quantity})`).join(', '),
                        tong_tien: formatCurrency(finalTotal.value),
                        ten_quan: shopInfo.value?.name || 'Cửa hàng',
-                       hinh_anh_quan: shopInfo.value?.image_url || '',
                        dia_chi_giao: userInfo.address,
                        lat_tra: selectedCoords.value.lat,
                        lng_tra: selectedCoords.value.lng

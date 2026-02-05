@@ -16,27 +16,26 @@ async function saveOrderToExcel(orderData) {
             worksheet = workbook.addWorksheet('Orders');
         }
 
+        // ĐỊNH NGHĨA CỘT RÕ RÀNG
         worksheet.columns = [
-            { header: 'Mã Đơn Hàng', key: 'madonhang', width: 15 },
-            { header: 'Khách Hàng', key: 'khachhang', width: 25 },
-            { header: 'Số Điện Thoại', key: 'sdt', width: 15 },
-            { header: 'Địa Chỉ Giao', key: 'diachi', width: 40 },
-            { header: 'Món Ăn', key: 'monan', width: 40 },
-            { header: 'Tổng Tiền', key: 'tongtien', width: 15 },
-            { header: 'Trạng Thái', key: 'trangthai', width: 20 },
-            { header: 'Cập Nhật Cuối', key: 'capnhat', width: 25 }
+            { header: 'Mã Đơn Hàng', key: 'col_id', width: 15 },
+            { header: 'Khách Hàng', key: 'col_name', width: 25 },
+            { header: 'Số Điện Thoại', key: 'col_phone', width: 15 },
+            { header: 'Địa Chỉ Giao', key: 'col_addr', width: 40 },
+            { header: 'Món Ăn', key: 'col_items', width: 40 },
+            { header: 'Tổng Tiền', key: 'col_total', width: 15 },
+            { header: 'Trạng Thái', key: 'col_status', width: 20 },
+            { header: 'Cập Nhật Cuối', key: 'col_update', width: 25 }
         ];
 
         if (!fs.existsSync(EXCEL_FILE_PATH)) {
             worksheet.getRow(1).font = { bold: true };
         }
 
-        // TÌM DÒNG CŨ ĐỂ CẬP NHẬT
+        // TÌM DÒNG CŨ THEO MÃ D001
         let rowToUpdate = null;
         worksheet.eachRow((row, rowNumber) => {
-            // So sánh Mã Đơn Hàng (Ví dụ: D001)
-            const cellValue = row.getCell('madonhang').value;
-            if (rowNumber > 1 && cellValue === orderData.orderId) {
+            if (rowNumber > 1 && row.getCell('col_id').value === orderData.orderId) {
                 rowToUpdate = row;
             }
         });
@@ -45,7 +44,7 @@ async function saveOrderToExcel(orderData) {
             'pending': 'Chờ xử lý',
             'confirmed': 'Đã xác nhận',
             'finding_driver': 'Đang tìm tài xế',
-            'driver_assigned': 'Tài xế đang đến shop',
+            'driver_assigned': 'Tài xế đã nhận đơn',
             'picked_up': 'Đang giao',
             'delivered': 'Giao hàng thành công',
             'cancelled': 'Đã hủy'
@@ -55,31 +54,30 @@ async function saveOrderToExcel(orderData) {
         const now = new Date().toLocaleString('vi-VN');
 
         if (rowToUpdate) {
-            // Cập nhật dòng hiện có
-            rowToUpdate.getCell('trangthai').value = displayStatus;
-            rowToUpdate.getCell('capnhat').value = now;
-            // Cập nhật lại các thông tin khác nếu có thay đổi
-            if (orderData.customerName) rowToUpdate.getCell('khachhang').value = orderData.customerName;
-            if (orderData.phone) rowToUpdate.getCell('sdt').value = orderData.phone;
-            if (orderData.items) rowToUpdate.getCell('monan').value = orderData.items;
+            // CẬP NHẬT
+            rowToUpdate.getCell('col_status').value = displayStatus;
+            rowToUpdate.getCell('col_update').value = now;
+            // Cập nhật tên/sđt nếu trước đó bị thiếu
+            if (orderData.customerName) rowToUpdate.getCell('col_name').value = orderData.customerName;
+            if (orderData.phone) rowToUpdate.getCell('col_phone').value = orderData.phone;
         } else {
-            // Thêm dòng mới hoàn toàn
+            // THÊM MỚI
             worksheet.addRow({
-                madonhang: orderData.orderId,
-                khachhang: orderData.customerName || 'Khách hàng',
-                sdt: orderData.phone || 'N/A',
-                diachi: orderData.address || 'N/A',
-                monan: orderData.items || 'N/A',
-                tongtien: typeof orderData.totalPrice === 'number' ? orderData.totalPrice : 0,
-                trangthai: displayStatus || 'Chờ xử lý',
-                capnhat: now
+                col_id: orderData.orderId,
+                col_name: orderData.customerName || 'Khách hàng',
+                col_phone: orderData.phone || 'N/A',
+                col_addr: orderData.address || 'N/A',
+                col_items: orderData.items || 'N/A',
+                col_total: typeof orderData.totalPrice === 'number' ? orderData.totalPrice : 0,
+                col_status: displayStatus || 'Chờ xử lý',
+                col_update: now
             });
         }
 
         await workbook.xlsx.writeFile(EXCEL_FILE_PATH);
-        console.log(`✅ [Excel] Đã cập nhật đơn ${orderData.orderId}`);
+        console.log(`✅ [Excel] ${orderData.orderId} -> ${displayStatus}`);
     } catch (error) {
-        console.error('❌ Lỗi Excel:', error);
+        console.error('❌ Excel Error:', error);
     }
 }
 
