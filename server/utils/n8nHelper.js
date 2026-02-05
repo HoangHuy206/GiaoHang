@@ -16,21 +16,22 @@ async function sendOrderToN8N(orderData) {
 
         const displayStatus = statusMap[orderData.status] || orderData.status || 'Chờ xử lý';
 
+        // BỘ KHÓA CHUẨN - Dùng để so khớp dòng trong Google Sheets
         const payload = {
-            ten: orderData.customerName || 'Khách hàng',
+            madonhang: orderData.orderId, // Ví dụ: D001
+            khachhang: orderData.customerName || 'Khách hàng',
             sdt: orderData.phone || 'N/A',
             monan: orderData.items || 'N/A',
             tongtien: typeof orderData.totalPrice === 'number' 
-                ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(orderData.totalPrice)
+                ? new Intl.NumberFormat('vi-VN').format(orderData.totalPrice) + 'đ'
                 : orderData.totalPrice,
             diachi: orderData.address || 'N/A',
             trangthai: displayStatus,
-            ngaydat: new Date().toLocaleString('vi-VN'),
-            madonhang: orderData.orderId
+            capnhat: new Date().toLocaleString('vi-VN')
         };
 
         await axios.post(N8N_WEBHOOK_URL, payload);
-        console.log(`🚀 [n8n] Đã gửi thông tin đơn hàng ${orderData.orderId} sang n8n.`);
+        console.log(`🚀 [n8n] Đã gửi/cập nhật đơn hàng ${orderData.orderId} (Trạng thái: ${displayStatus})`);
     } catch (error) {
         console.error('⚠️ [n8n] Lỗi khi gửi webhook sang n8n:', error.message);
     }

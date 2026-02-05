@@ -274,27 +274,32 @@ export default {
             };
         
             const generateNewQR = async () => {
-              randomOrderCode.value = 'DH' + Math.floor(Math.random() * 1000000);
-              paymentStatus.value = 'pending';
-              qrTimeLeft.value = 600;
-              
-              // Tham gia vào phòng socket của đơn hàng này để nhận tin nhắn tức thì
-              const idNum = randomOrderCode.value.replace(/\D/g, '');
-              socket.emit('join_room', `order_${idNum}`);
-        
               try {
+                // Fetch real order code from backend
+                const res = await axios.post(`${API_BASE_URL}/api/orders/pre-reserve`);
+                randomOrderCode.value = res.data.orderCode;
+                const realId = res.data.orderId;
+                
+                paymentStatus.value = 'pending';
+                qrTimeLeft.value = 600;
+                
+                // Join socket room
+                socket.emit('join_room', `order_${realId}`);
+          
                 await axios.post(`${API_BASE_URL}/api/payment/register`, { code: randomOrderCode.value });
+
+                if (timerInterval) clearInterval(timerInterval);
+                timerInterval = setInterval(() => {
+                  if (qrTimeLeft.value > 0) qrTimeLeft.value--;
+                  else generateNewQR();
+                }, 1000);
+          
+                startPollingPayment();
               } catch (e) {
-                console.error("Lỗi đăng ký mã thanh toán:", e);
+                console.error("Lỗi tạo mã thanh toán thật:", e);
+                // Fallback to old random if API fails
+                randomOrderCode.value = 'DH' + Math.floor(Math.random() * 1000000);
               }
-        
-              if (timerInterval) clearInterval(timerInterval);
-              timerInterval = setInterval(() => {
-                if (qrTimeLeft.value > 0) qrTimeLeft.value--;
-                else generateNewQR();
-              }, 1000);
-        
-              startPollingPayment();
             };
     
         onUnmounted(() => { 

@@ -15,12 +15,9 @@ const axios = require('axios'); // Added for n8n
 const { saveOrderToExcel } = require('./utils/excelHelper');
 const { sendOrderToN8N } = require('./utils/n8nHelper');
 
-// Helper to generate a unique professional Order Code
+// Helper to generate a unique simple Order Code (e.g., D001)
 function generateOrderCode(orderId) {
-    const now = new Date();
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    return `DH${day}${month}-${orderId}`;
+    return `D${String(orderId).padStart(3, '0')}`;
 }
 
 const app = express();
@@ -684,6 +681,20 @@ app.get('/api/orders/:id/messages', async (req, res) => {
         res.json(messages);
     } catch (err) {
         res.json([]);
+    }
+});
+
+// Pre-reserve an order ID for QR payment consistency
+app.post('/api/orders/pre-reserve', async (req, res) => {
+    try {
+        await pool.query(`USE ${process.env.DB_NAME}`);
+        // Insert a temporary empty order to get a real ID
+        const [result] = await pool.query('INSERT INTO orders (user_id, shop_id, status, total_price, delivery_address) VALUES (0, 0, "pending", 0, "")');
+        const orderId = result.insertId;
+        const orderCode = generateOrderCode(orderId);
+        res.json({ orderId, orderCode });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
