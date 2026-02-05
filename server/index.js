@@ -12,6 +12,8 @@ const compression = require('compression');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { MOCK_SHOPS, MOCK_PRODUCTS } = require('./mockData');
 const axios = require('axios'); // Added for n8n
+const { saveOrderToExcel } = require('./utils/excelHelper');
+const { sendOrderToN8N } = require('./utils/n8nHelper');
 
 const app = express();
 
@@ -231,6 +233,12 @@ app.post('/api/payment/webhook', async (req, res) => {
             });
 
             console.log(`🚀 Đã cập nhật đơn #${orderIdNum} -> finding_driver và báo cho Client.`);
+            
+            // Update Excel for AI Support
+            saveOrderToExcel({ orderId: 'DH' + orderIdNum, status: 'finding_driver' }).catch(e => console.error("Excel update error:", e));
+            
+            // Update n8n for AI Support
+            sendOrderToN8N({ orderId: 'DH' + orderIdNum, status: 'finding_driver' }).catch(e => console.error("n8n update error:", e));
         }
 
         await connection.commit();
@@ -490,6 +498,43 @@ app.post('/api/orders', async (req, res) => {
 
         await connection.commit();
         
+        // Save to Excel for AI Support
+        try {
+            const [orderDetailRows] = await pool.query(`
+                SELECT o.id, u.full_name, u.phone, s.name as shop_name, o.delivery_address, o.total_price, o.status
+                FROM orders o
+                JOIN users u ON o.user_id = u.id
+                JOIN shops s ON o.shop_id = s.id
+                WHERE o.id = ?`, [orderId]);
+
+            if (orderDetailRows.length > 0) {
+                const od = orderDetailRows[0];
+                const [itemRows] = await pool.query(`
+                    SELECT p.name, oi.quantity 
+                    FROM order_items oi 
+                    JOIN products p ON oi.product_id = p.id 
+                    WHERE oi.order_id = ?`, [orderId]);
+                
+                const itemNames = itemRows.map(i => `${i.name} (${i.quantity})`).join(', ');
+
+                const orderPayload = {
+                    orderId: 'DH' + orderId,
+                    customerName: od.full_name,
+                    phone: od.phone,
+                    address: od.delivery_address,
+                    shopName: od.shop_name,
+                    items: itemNames,
+                    totalPrice: od.total_price,
+                    status: od.status
+                };
+
+                await saveOrderToExcel(orderPayload);
+                await sendOrderToN8N(orderPayload);
+            }
+        } catch (excelErr) {
+            console.error("Failed to save to Excel:", excelErr);
+        }
+
         // Notify Shop
         // We assume shop admin userId is linked to shopId. simpler: emit to room 'shop_{shopId}'
         io.to(`shop_${shopId}`).emit('new_order', { orderId, totalPrice, items });
@@ -590,6 +635,12 @@ app.put('/api/orders/:id/status', async (req, res) => {
         params.push(orderId);
 
         await pool.query(query, params);
+
+        // Update Excel for AI Support
+        saveOrderToExcel({ orderId: 'DH' + orderId, status: status }).catch(e => console.error("Excel update error:", e));
+        
+        // Update n8n for AI Support
+        sendOrderToN8N({ orderId: 'DH' + orderId, status: status }).catch(e => console.error("n8n update error:", e));
 
         // Notify relevant parties
         const [orderRows] = await pool.query(`

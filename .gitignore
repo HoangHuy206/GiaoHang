@@ -4,3 +4,4 @@ dist/
 client/dist/
 .DS_Store
 *.log
+server/orders.xlsx

@@ -245,137 +245,72 @@ export default {
     const qrCodeUrl = computed(() => `https://img.vietqr.io/image/${bankId}-${accountNo}-qr_only.png?amount=${finalTotal.value}&addInfo=${randomOrderCode.value}`);
 
             const checkPaymentStatus = async () => {
-
                 try {
-
                     // Thêm timestamp ?t= để chống cache trình duyệt
-
                     const res = await axios.get(`${API_BASE_URL}/api/payment/check/${randomOrderCode.value}?t=${Date.now()}`);
-
                     if (res.data.paid) {
-
                         paymentStatus.value = 'success';
-
                         if (timerInterval) clearInterval(timerInterval);
-
                         if (checkInterval) clearInterval(checkInterval);
-
                         return true;
-
                     }
-
                 } catch (e) {
-
                     console.error("Lỗi kiểm tra thanh toán:", e);
-
                 }
-
                 return false;
-
             };
 
         
-
             let checkInterval = null;
-
         
-
             const startPollingPayment = () => {
-
                 if (checkInterval) clearInterval(checkInterval);
-
                 checkInterval = setInterval(async () => {
-
                     const isPaid = await checkPaymentStatus();
-
                     if (isPaid) {
-
                         clearInterval(checkInterval);
-
                     }
-
                 }, 3000); 
-
             };
-
         
-
             const generateNewQR = async () => {
-
               randomOrderCode.value = 'DH' + Math.floor(Math.random() * 1000000);
-
               paymentStatus.value = 'pending';
-
               qrTimeLeft.value = 600;
-
               
-
               // Tham gia vào phòng socket của đơn hàng này để nhận tin nhắn tức thì
-
               const idNum = randomOrderCode.value.replace(/\D/g, '');
-
               socket.emit('join_room', `order_${idNum}`);
-
         
-
               try {
-
                 await axios.post(`${API_BASE_URL}/api/payment/register`, { code: randomOrderCode.value });
-
               } catch (e) {
-
                 console.error("Lỗi đăng ký mã thanh toán:", e);
-
               }
-
         
-
               if (timerInterval) clearInterval(timerInterval);
-
               timerInterval = setInterval(() => {
-
                 if (qrTimeLeft.value > 0) qrTimeLeft.value--;
-
                 else generateNewQR();
-
               }, 1000);
-
         
-
               startPollingPayment();
-
             };
-
     
-
         onUnmounted(() => { 
-
             if (timerInterval) clearInterval(timerInterval);
-
             if (checkInterval) clearInterval(checkInterval);
-
         });
-
     
-
         const selectPayment = (method) => {
-
           paymentMethod.value = method;
-
           if (method === 'banking') {
-
               generateNewQR();
-
           } else {
-
               if (timerInterval) clearInterval(timerInterval);
-
               if (checkInterval) clearInterval(checkInterval);
-
               paymentStatus.value = 'pending';
-
           }
-
         };
 
     const handleConfirmPaid = () => {
@@ -522,6 +457,29 @@ export default {
            if (res.data.success || res.status === 200) {
                const orderId = res.data.orderId;
                const maDonHang = randomOrderCode.value || ('DH' + orderId);
+
+               // ==========================================
+               // === PHẦN THÊM MỚI: GỬI WEBHOOK CHO N8N ===
+               // ==========================================
+               try {
+                  const webhookData = {
+                      ten: userInfo.name || 'Khách vãng lai',
+                      sdt: userInfo.phone || 'Chưa cung cấp',
+                      monan: items.value.map(i => `${i.name} (${i.quantity})`).join(', '),
+                      tongtien: formatCurrency(finalTotal.value),
+                      diachi: userInfo.address,
+                      trangthai: "Chờ xác nhận",
+                      ngaydat: new Date().toLocaleString(),
+                      madonhang: maDonHang
+                  };
+                  // Gửi không đồng bộ (fire and forget) hoặc await tùy ý. Ở đây dùng await để đảm bảo dữ liệu đi.
+                  // Lưu ý: Thay đổi URL nếu bạn đổi server n8n
+                  await axios.post('https://n8n-ibpj.onrender.com/webhook-test/dathang', webhookData);
+                  console.log("✅ Đã gửi webhook n8n thành công");
+               } catch (n8nError) {
+                  console.error("⚠️ Lỗi gửi Webhook n8n (Không ảnh hưởng đơn hàng):", n8nError);
+               }
+               // ==========================================
 
                // [OPTIONAL] Socket emit as per original code (if backend/driver expects it)
                // Construct the extended object the original code wanted to emit
