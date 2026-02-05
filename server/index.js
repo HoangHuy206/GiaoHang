@@ -241,11 +241,42 @@ app.post('/api/payment/webhook', async (req, res) => {
 
             console.log(`🚀 Đã cập nhật đơn #${orderIdNum} -> finding_driver và báo cho Client.`);
             
-            // Update Excel for AI Support
-            saveOrderToExcel({ orderId: 'DH' + orderIdNum, status: 'finding_driver' }).catch(e => console.error("Excel update error:", e));
-            
-            // Update n8n for AI Support
-            sendOrderToN8N({ orderId: 'DH' + orderIdNum, status: 'finding_driver' }).catch(e => console.error("n8n update error:", e));
+            // Fetch full order details for sync
+            try {
+                const [orderDetailRows] = await connection.query(`
+                    SELECT o.id, u.full_name, u.phone, s.name as shop_name, o.delivery_address, o.total_price, o.status
+                    FROM orders o
+                    JOIN users u ON o.user_id = u.id
+                    JOIN shops s ON o.shop_id = s.id
+                    WHERE o.id = ?`, [orderIdNum]);
+
+                if (orderDetailRows.length > 0) {
+                    const od = orderDetailRows[0];
+                    const [itemRows] = await connection.query(`
+                        SELECT p.name, oi.quantity 
+                        FROM order_items oi 
+                        JOIN products p ON oi.product_id = p.id 
+                        WHERE oi.order_id = ?`, [orderIdNum]);
+                    
+                    const itemNames = itemRows.map(i => `${i.name} (${i.quantity})`).join(', ');
+
+                    const orderPayload = {
+                        orderId: 'DH' + orderIdNum,
+                        customerName: od.full_name,
+                        phone: od.phone,
+                        address: od.delivery_address,
+                        shopName: od.shop_name,
+                        items: itemNames,
+                        totalPrice: od.total_price,
+                        status: 'finding_driver'
+                    };
+
+                    await saveOrderToExcel(orderPayload);
+                    await sendOrderToN8N(orderPayload);
+                }
+            } catch (syncErr) {
+                console.error("Webhook sync error:", syncErr);
+            }
         }
 
         await connection.commit();
@@ -643,11 +674,42 @@ app.put('/api/orders/:id/status', async (req, res) => {
 
         await pool.query(query, params);
 
-        // Update Excel for AI Support
-        saveOrderToExcel({ orderId: 'DH' + orderId, status: status }).catch(e => console.error("Excel update error:", e));
-        
-        // Update n8n for AI Support
-        sendOrderToN8N({ orderId: 'DH' + orderId, status: status }).catch(e => console.error("n8n update error:", e));
+        // Fetch full order details to ensure Excel and n8n have complete data for updating
+        try {
+            const [orderDetailRows] = await pool.query(`
+                SELECT o.id, u.full_name, u.phone, s.name as shop_name, o.delivery_address, o.total_price, o.status
+                FROM orders o
+                JOIN users u ON o.user_id = u.id
+                JOIN shops s ON o.shop_id = s.id
+                WHERE o.id = ?`, [orderId]);
+
+            if (orderDetailRows.length > 0) {
+                const od = orderDetailRows[0];
+                const [itemRows] = await pool.query(`
+                    SELECT p.name, oi.quantity 
+                    FROM order_items oi 
+                    JOIN products p ON oi.product_id = p.id 
+                    WHERE oi.order_id = ?`, [orderId]);
+                
+                const itemNames = itemRows.map(i => `${i.name} (${i.quantity})`).join(', ');
+
+                const orderPayload = {
+                    orderId: 'DH' + orderId,
+                    customerName: od.full_name,
+                    phone: od.phone,
+                    address: od.delivery_address,
+                    shopName: od.shop_name,
+                    items: itemNames,
+                    totalPrice: od.total_price,
+                    status: od.status // This is the new status
+                };
+
+                await saveOrderToExcel(orderPayload);
+                await sendOrderToN8N(orderPayload);
+            }
+        } catch (syncErr) {
+            console.error("Sync error:", syncErr);
+        }
 
         // Notify relevant parties
         const [orderRows] = await pool.query(`
