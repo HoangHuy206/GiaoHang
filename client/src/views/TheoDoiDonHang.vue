@@ -14,6 +14,7 @@
 
     <div v-else class="space-y-6">
       <div v-for="order in orders" :key="order.id" class="bg-white p-6 rounded-xl shadow border border-gray-100 hover:shadow-lg transition-shadow cursor-pointer" @click="goToProduct(order)">
+        
         <div class="flex justify-between items-start mb-4 border-b pb-4">
           <div class="flex gap-4">
             <!-- Product Image -->
@@ -36,6 +37,37 @@
              </span>
              <p class="text-xl font-bold text-green-600">{{ formatPrice(order.total_price) }}</p>
           </div>
+        </div>
+
+        <!-- Status Tracker Progress Bar -->
+        <div class="status-tracker-container mb-6 px-2" v-if="order.status !== 'cancelled'">
+           <div class="status-tracker">
+              <div class="step" :class="{ active: getOrderStep(order.status) >= 1 }">
+                 <div class="circle">1</div>
+                 <div class="label">Chờ xử lý</div>
+              </div>
+              <div class="line" :class="{ active: getOrderStep(order.status) >= 2 }"></div>
+              
+              <div class="step" :class="{ active: getOrderStep(order.status) >= 2 }">
+                 <div class="circle">2</div>
+                 <div class="label">Đã xác nhận</div>
+              </div>
+              <div class="line" :class="{ active: getOrderStep(order.status) >= 3 }"></div>
+
+              <div class="step" :class="{ active: getOrderStep(order.status) >= 3 }">
+                 <div class="circle">3</div>
+                 <div class="label">Đang giao</div>
+              </div>
+              <div class="line" :class="{ active: getOrderStep(order.status) >= 4 }"></div>
+
+              <div class="step" :class="{ active: getOrderStep(order.status) >= 4 }">
+                 <div class="circle">4</div>
+                 <div class="label">Đã nhận</div>
+              </div>
+           </div>
+        </div>
+        <div v-else class="mb-6 p-3 bg-red-50 text-red-600 text-center rounded-lg font-bold border border-red-200">
+           ❌ Đơn hàng đã bị hủy
         </div>
 
         <!-- Confirm Button Section -->
@@ -109,7 +141,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import StandardHeader from '../components/StandardHeader.vue';
 import { useAuthStore } from '../stores/auth';
@@ -122,10 +154,13 @@ const router = useRouter();
 const orders = ref([]);
 const loading = ref(true);
 const openChatId = ref(null);
+let pollInterval = null;
 
 const getImageUrl = (url) => {
     if (!url) return 'https://cdn-icons-png.flaticon.com/512/706/706164.png';
-    if (url.startsWith('http')) return url;
+    if (url.startsWith('http')) {
+        return url.replace('http://localhost:3000', API_BASE_URL);
+    }
     return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
@@ -136,6 +171,14 @@ const goToProduct = (order) => {
             query: { highlight: order.first_product_id } 
         });
     }
+};
+
+const getOrderStep = (status) => {
+    if (['pending'].includes(status)) return 1;
+    if (['confirmed', 'finding_driver', 'driver_assigned'].includes(status)) return 2;
+    if (['picked_up', 'shipping'].includes(status)) return 3;
+    if (['delivered', 'completed'].includes(status)) return 4;
+    return 1;
 };
 
 // Rating Logic
@@ -170,11 +213,9 @@ const submitRating = async () => {
             comment: comment.value
         });
         
-        // Mark as completed locally
         const idx = orders.value.findIndex(o => o.id === selectedOrder.value.id);
         if (idx !== -1) {
             orders.value[idx].is_completed_by_user = true;
-            // Optionally update backend to flag order as fully reviewed if needed
         }
         
         alert("Cảm ơn đánh giá của bạn!");
@@ -198,18 +239,7 @@ const fetchOrders = async () => {
         userId: auth.user.id 
       }
     });
-    
-    // Check if already reviewed (naive check, better to have a flag in DB)
-    // For now we rely on local state or simple logic. 
-    // Ideally backend should return `has_reviewed` flag.
-    // Let's assume for prototype if it's delivered we show button unless clicked.
-    // We'll fetch reviews to check if already reviewed.
-    const ordersData = response.data;
-    
-    // Quick check for existing reviews (optional optimization)
-    // For now, simple implementation.
-    orders.value = ordersData;
-
+    orders.value = response.data;
   } catch (error) {
     console.error("Lỗi tải đơn hàng:", error);
   } finally {
@@ -255,7 +285,22 @@ const formatDate = (dateStr) => {
 
 onMounted(() => {
   fetchOrders();
-  // Poll for updates every 10 seconds
-  setInterval(fetchOrders, 10000);
+  pollInterval = setInterval(fetchOrders, 5000);
+});
+
+onUnmounted(() => {
+    if (pollInterval) clearInterval(pollInterval);
 });
 </script>
+
+<style scoped>
+.status-tracker { display: flex; align-items: center; justify-content: space-between; position: relative; }
+.step { display: flex; flex-direction: column; align-items: center; position: relative; z-index: 2; width: 60px; }
+.circle { width: 30px; height: 30px; background: #e5e7eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; transition: 0.3s; border: 2px solid white; }
+.label { font-size: 11px; margin-top: 5px; color: #9ca3af; font-weight: 500; white-space: nowrap; text-align: center; }
+.line { flex: 1; height: 3px; background: #e5e7eb; margin: 0 -5px; position: relative; top: -12px; z-index: 1; transition: 0.3s; }
+
+.step.active .circle { background: #00b14f; transform: scale(1.1); box-shadow: 0 0 0 3px rgba(0, 177, 79, 0.1); }
+.step.active .label { color: #00b14f; font-weight: 700; }
+.line.active { background: #00b14f; }
+</style>

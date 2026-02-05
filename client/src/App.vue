@@ -33,7 +33,7 @@ const openCart = () => {
     </main>
     <!-- Add CartDrawer here so it exists globally -->
     <CartDrawer />
-    <AI />
+    <AI v-if="!auth.user || auth.user.role === 'user'" />
   </div>
 </template>
 

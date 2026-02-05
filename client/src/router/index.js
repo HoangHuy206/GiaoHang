@@ -45,7 +45,17 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   document.title = to.meta.title || 'Giao Hàng Tận Nơi';
 
-  const user = localStorage.getItem('user');
+  const userStr = localStorage.getItem('user');
+  const user = userStr ? JSON.parse(userStr) : null;
+
+  // Tự động điều hướng tài xế và chủ shop khi vào trang chủ
+  if (to.path === '/' && user) {
+    if (user.role === 'driver') {
+      return next('/trangchutaixe');
+    } else if (user.role === 'shop') {
+      return next('/shop-admin');
+    }
+  }
 
   if (to.meta.requiresAuth && !user) {
     // Nếu trang yêu cầu đăng nhập mà chưa có user -> chuyển về login
