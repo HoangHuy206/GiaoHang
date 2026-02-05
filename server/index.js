@@ -542,9 +542,8 @@ app.post('/api/orders', async (req, res) => {
         res.json({ success: true, orderId });
     } catch (err) {
         if (connection) await connection.rollback();
-        console.error("DB Error Place Order, using mock:", err.message);
-        // Return success even if DB fails to let user "feel" it worked
-        res.json({ success: true, orderId: Math.floor(Math.random() * 1000) });
+        console.error("DB Error Place Order:", err.message);
+        res.status(500).json({ success: false, message: "Lỗi hệ thống khi đặt hàng. Vui lòng thử lại." });
     } finally {
         if (connection) connection.release();
     }
