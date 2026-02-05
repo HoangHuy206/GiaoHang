@@ -456,33 +456,9 @@ export default {
 
            if (res.data.success || res.status === 200) {
                const orderId = res.data.orderId;
-               const maDonHang = randomOrderCode.value || ('DH' + orderId);
-
-               // ==========================================
-               // === PHẦN THÊM MỚI: GỬI WEBHOOK CHO N8N ===
-               // ==========================================
-               try {
-                  const webhookData = {
-                      ten: userInfo.name || 'Khách vãng lai',
-                      sdt: userInfo.phone || 'Chưa cung cấp',
-                      monan: items.value.map(i => `${i.name} (${i.quantity})`).join(', '),
-                      tongtien: formatCurrency(finalTotal.value),
-                      diachi: userInfo.address,
-                      trangthai: "Chờ xác nhận",
-                      ngaydat: new Date().toLocaleString(),
-                      madonhang: maDonHang
-                  };
-                  // Gửi không đồng bộ (fire and forget) hoặc await tùy ý. Ở đây dùng await để đảm bảo dữ liệu đi.
-                  // Lưu ý: Thay đổi URL nếu bạn đổi server n8n
-                  await axios.post('https://n8n-ibpj.onrender.com/webhook-test/dathang', webhookData);
-                  console.log("✅ Đã gửi webhook n8n thành công");
-               } catch (n8nError) {
-                  console.error("⚠️ Lỗi gửi Webhook n8n (Không ảnh hưởng đơn hàng):", n8nError);
-               }
-               // ==========================================
+               const maDonHang = res.data.orderCode || ('DH' + orderId);
 
                // [OPTIONAL] Socket emit as per original code (if backend/driver expects it)
-               // Construct the extended object the original code wanted to emit
                const socketData = {
                    ma_don_hang: maDonHang,
                    orderId: orderId, // Include real DB ID

@@ -21,9 +21,13 @@
                <img :src="getImageUrl(order.first_product_image)" alt="Product" class="w-full h-full object-cover">
             </div>
             <div>
-              <h3 class="font-bold text-lg text-gray-800">Mã đơn: #{{ order.id }}</h3>
+              <h3 class="font-bold text-lg text-green-700">Mã đơn: {{ order.order_code }}</h3>
+              <p class="text-xs text-gray-400">ID gốc: #{{ order.id }}</p>
               <p class="text-sm text-gray-500">{{ formatDate(order.created_at) }}</p>
               <p class="text-sm font-semibold text-gray-700 mt-1">Quán: {{ order.shop_name }}</p>
+              <div v-if="order.item_details" class="text-xs text-gray-600 mt-2 bg-gray-50 p-2 rounded border border-gray-100 italic">
+                <b>Món ăn:</b> {{ order.item_details }}
+              </div>
             </div>
           </div>
           <div class="text-right">

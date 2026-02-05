@@ -15,6 +15,14 @@ const axios = require('axios'); // Added for n8n
 const { saveOrderToExcel } = require('./utils/excelHelper');
 const { sendOrderToN8N } = require('./utils/n8nHelper');
 
+// Helper to generate a unique professional Order Code
+function generateOrderCode(orderId) {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `DH${day}${month}-${orderId}`;
+}
+
 const app = express();
 
 // Initialize Gemini (Deprecated in favor of Groq)
@@ -122,19 +130,28 @@ app.post('/api/chat', async (req, res) => {
     const { message, userId } = req.body;
     let products = [];
     try {
-        const [rows] = await pool.query('SELECT p.id, p.name, p.price, p.image_url, s.name as shop_name FROM products p JOIN shops s ON p.shop_id = s.id');
+        const [rows] = await pool.query('SELECT p.id, p.name, p.product_code, p.price, p.image_url, s.name as shop_name FROM products p JOIN shops s ON p.shop_id = s.id');
         products = rows;
         let orderContext = "User chưa đăng nhập hoặc không có đơn hàng gần đây.";
         if (userId) {
             const [orders] = await pool.query(`
                 SELECT o.id, o.status, o.total_price, o.delivery_address, 
-                       u_d.full_name as driver_name, u_c.full_name as customer_name, u_c.phone as customer_phone
+                       u_d.full_name as driver_name, u_c.full_name as customer_name, u_c.phone as customer_phone,
+                       (SELECT GROUP_CONCAT(CONCAT('[', p.product_code, '] ', p.name, ' (', oi.quantity, ')') SEPARATOR ', ') 
+                        FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id) as items
                 FROM orders o 
                 LEFT JOIN users u_d ON o.driver_id = u_d.id 
                 JOIN users u_c ON o.user_id = u_c.id
                 WHERE o.user_id = ? AND o.status != 'cancelled' 
                 ORDER BY o.created_at DESC LIMIT 3`, [userId]);
-            if (orders.length > 0) orderContext = JSON.stringify(orders);
+            
+            // Format orders to include the professional Order Code
+            const formattedOrders = orders.map(o => ({
+                ...o,
+                orderCode: generateOrderCode(o.id)
+            }));
+            
+            if (formattedOrders.length > 0) orderContext = JSON.stringify(formattedOrders);
         }
         const currentTime = new Date().toLocaleString('vi-VN');
         const productListForAI = products.map(p => ({ name: p.name, price: p.price, shop: p.shop_name }));
@@ -253,15 +270,18 @@ app.post('/api/payment/webhook', async (req, res) => {
                 if (orderDetailRows.length > 0) {
                     const od = orderDetailRows[0];
                     const [itemRows] = await connection.query(`
-                        SELECT p.name, oi.quantity 
+                        SELECT p.name, p.product_code, oi.quantity 
                         FROM order_items oi 
                         JOIN products p ON oi.product_id = p.id 
                         WHERE oi.order_id = ?`, [orderIdNum]);
                     
-                    const itemNames = itemRows.map(i => `${i.name} (${i.quantity})`).join(', ');
+                    const itemNames = itemRows.map(i => {
+                        const code = i.product_code ? `${i.product_code} - ` : '';
+                        return `${code}${i.name} (${i.quantity})`;
+                    }).join(', ');
 
                     const orderPayload = {
-                        orderId: 'DH' + orderIdNum,
+                        orderId: generateOrderCode(orderIdNum),
                         customerName: od.full_name,
                         phone: od.phone,
                         address: od.delivery_address,
@@ -453,7 +473,7 @@ app.get('/api/shops/:id', async (req, res) => {
     try {
         await pool.query(`USE ${process.env.DB_NAME}`);
         const [shop] = await pool.query('SELECT * FROM shops WHERE id = ?', [req.params.id]);
-        const [products] = await pool.query('SELECT * FROM products WHERE shop_id = ?', [req.params.id]);
+        const [products] = await pool.query('SELECT id, shop_id, name, product_code, price, image_url FROM products WHERE shop_id = ?', [req.params.id]);
         if (shop.length === 0) return res.status(404).json({ error: 'Shop not found' });
         res.json({ ...shop[0], products });
     } catch (err) {
@@ -549,15 +569,18 @@ app.post('/api/orders', async (req, res) => {
             if (orderDetailRows.length > 0) {
                 const od = orderDetailRows[0];
                 const [itemRows] = await pool.query(`
-                    SELECT p.name, oi.quantity 
+                    SELECT p.name, p.product_code, oi.quantity 
                     FROM order_items oi 
                     JOIN products p ON oi.product_id = p.id 
                     WHERE oi.order_id = ?`, [orderId]);
                 
-                const itemNames = itemRows.map(i => `${i.name} (${i.quantity})`).join(', ');
+                const itemNames = itemRows.map(i => {
+                    const code = i.product_code ? `${i.product_code} - ` : '';
+                    return `${code}${i.name} (${i.quantity})`;
+                }).join(', ');
 
                 const orderPayload = {
-                    orderId: 'DH' + orderId,
+                    orderId: generateOrderCode(orderId),
                     customerName: od.full_name,
                     phone: od.phone,
                     address: od.delivery_address,
@@ -576,9 +599,10 @@ app.post('/api/orders', async (req, res) => {
 
         // Notify Shop
         // We assume shop admin userId is linked to shopId. simpler: emit to room 'shop_{shopId}'
-        io.to(`shop_${shopId}`).emit('new_order', { orderId, totalPrice, items });
+        const finalOrderCode = generateOrderCode(orderId);
+        io.to(`shop_${shopId}`).emit('new_order', { orderId, orderCode: finalOrderCode, totalPrice, items });
         
-        res.json({ success: true, orderId });
+        res.json({ success: true, orderId, orderCode: finalOrderCode });
     } catch (err) {
         if (connection) await connection.rollback();
         console.error("DB Error Place Order:", err.message);
@@ -601,7 +625,9 @@ app.get('/api/orders', async (req, res) => {
                 SELECT o.*, s.name as shop_name, u.full_name as driver_name, u.phone as driver_phone,
                        (SELECT p.image_url FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_image,
                        (SELECT p.id FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_id,
-                       (SELECT COUNT(*) FROM reviews r WHERE r.order_id = o.id AND r.user_id = ?) > 0 as is_completed_by_user
+                       (SELECT COUNT(*) FROM reviews r WHERE r.order_id = o.id AND r.user_id = ?) > 0 as is_completed_by_user,
+                       (SELECT GROUP_CONCAT(CONCAT('[', p.product_code, '] ', p.name, ' (', oi.quantity, ')') SEPARATOR ', ') 
+                        FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id) as item_details
                 FROM orders o
                 JOIN shops s ON o.shop_id = s.id
                 LEFT JOIN users u ON o.driver_id = u.id
@@ -632,7 +658,14 @@ app.get('/api/orders', async (req, res) => {
         }
 
         const [rows] = await pool.query(query, params);
-        res.json(rows);
+        
+        // Add formatted orderCode to each row
+        const formattedRows = rows.map(row => ({
+            ...row,
+            order_code: generateOrderCode(row.id)
+        }));
+        
+        res.json(formattedRows);
     } catch (err) {
         console.error("DB Error Get Orders, using mock:", err.message);
         res.json([]); // Return empty list for now
@@ -686,15 +719,18 @@ app.put('/api/orders/:id/status', async (req, res) => {
             if (orderDetailRows.length > 0) {
                 const od = orderDetailRows[0];
                 const [itemRows] = await pool.query(`
-                    SELECT p.name, oi.quantity 
+                    SELECT p.name, p.product_code, oi.quantity 
                     FROM order_items oi 
                     JOIN products p ON oi.product_id = p.id 
                     WHERE oi.order_id = ?`, [orderId]);
                 
-                const itemNames = itemRows.map(i => `${i.name} (${i.quantity})`).join(', ');
+                const itemNames = itemRows.map(i => {
+                    const code = i.product_code ? `${i.product_code} - ` : '';
+                    return `${code}${i.name} (${i.quantity})`;
+                }).join(', ');
 
                 const orderPayload = {
-                    orderId: 'DH' + orderId,
+                    orderId: generateOrderCode(orderId),
                     customerName: od.full_name,
                     phone: od.phone,
                     address: od.delivery_address,
@@ -1155,6 +1191,36 @@ async function checkAndMigrate() {
                 if (columnsLng.length === 0) {
                     console.log('Migrating: Adding delivery_lng to orders table...');
                     await connection.query('ALTER TABLE orders ADD COLUMN delivery_lng DECIMAL(11, 8)');
+                }
+
+                // Check for product_code
+                const [columnsPC] = await connection.query("SHOW COLUMNS FROM products LIKE 'product_code'");
+                if (columnsPC.length === 0) {
+                    console.log('Migrating: Adding product_code to products table...');
+                    await connection.query('ALTER TABLE products ADD COLUMN product_code VARCHAR(50)');
+                }
+
+                // Auto-generate product codes for ALL products if missing
+                const [productsWithoutCode] = await connection.query('SELECT id, name FROM products WHERE product_code IS NULL OR product_code = ""');
+                
+                if (productsWithoutCode.length > 0) {
+                    console.log(`🏷️ Generating codes for ${productsWithoutCode.length} products...`);
+                    for (const product of productsWithoutCode) {
+                        const firstChar = product.name.trim().charAt(0).toUpperCase();
+                        // Find how many products already have a code starting with this letter
+                        const [existing] = await connection.query(
+                            'SELECT COUNT(*) as count FROM products WHERE product_code LIKE ?',
+                            [`${firstChar}%`]
+                        );
+                        const nextNumber = existing[0].count + 1;
+                        const newCode = `${firstChar}${String(nextNumber).padStart(3, '0')}`; // e.g., G001
+                        
+                        await connection.query(
+                            'UPDATE products SET product_code = ? WHERE id = ?',
+                            [newCode, product.id]
+                        );
+                    }
+                    console.log("✅ All product codes generated.");
                 }
             }
 
