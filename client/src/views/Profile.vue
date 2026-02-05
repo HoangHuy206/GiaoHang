@@ -22,6 +22,10 @@
             <input v-model="user.email" type="email" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500" placeholder="example@gmail.com">
         </div>
         <div>
+            <label class="block text-sm font-medium text-gray-700">Số điện thoại (Để tài xế liên hệ)</label>
+            <input v-model="user.phone" type="tel" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500" placeholder="09xxxxxxxx">
+        </div>
+        <div>
              <label class="block text-sm font-medium text-gray-700">Tên đăng nhập</label>
              <input :value="user.username" disabled type="text" class="mt-1 block w-full bg-gray-100 border border-gray-300 rounded-md shadow-sm py-2 px-3">
         </div>
@@ -120,6 +124,7 @@ const handleFileChange = async (event) => {
     formData.append('full_name', user.value.full_name || ''); // Send current name/addr to avoid clearing
     formData.append('address', user.value.address || '');
     formData.append('email', user.value.email || '');
+    formData.append('phone', user.value.phone || '');
 
     try {
         const res = await axios.put(`${API_BASE_URL}/api/users/${user.value.id}`, formData, {
@@ -146,7 +151,8 @@ const updateProfile = async () => {
         const payload = {
             full_name: user.value.full_name || '',
             address: user.value.address || '',
-            email: user.value.email || ''
+            email: user.value.email || '',
+            phone: user.value.phone || ''
         };
 
         const res = await axios.put(`${API_BASE_URL}/api/users/${user.value.id}`, payload);

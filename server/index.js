@@ -126,7 +126,14 @@ app.post('/api/chat', async (req, res) => {
         products = rows;
         let orderContext = "User chưa đăng nhập hoặc không có đơn hàng gần đây.";
         if (userId) {
-            const [orders] = await pool.query(`SELECT o.id, o.status, o.total_price, o.delivery_address, u.full_name as driver_name FROM orders o LEFT JOIN users u ON o.driver_id = u.id WHERE o.user_id = ? AND o.status != 'cancelled' ORDER BY o.created_at DESC LIMIT 3`, [userId]);
+            const [orders] = await pool.query(`
+                SELECT o.id, o.status, o.total_price, o.delivery_address, 
+                       u_d.full_name as driver_name, u_c.full_name as customer_name, u_c.phone as customer_phone
+                FROM orders o 
+                LEFT JOIN users u_d ON o.driver_id = u_d.id 
+                JOIN users u_c ON o.user_id = u_c.id
+                WHERE o.user_id = ? AND o.status != 'cancelled' 
+                ORDER BY o.created_at DESC LIMIT 3`, [userId]);
             if (orders.length > 0) orderContext = JSON.stringify(orders);
         }
         const currentTime = new Date().toLocaleString('vi-VN');
@@ -333,13 +340,13 @@ app.post('/api/auth/login', async (req, res) => {
 // Update Profile (Avatar + Info)
 app.put('/api/users/:id', upload.single('avatar'), async (req, res) => {
     const userId = req.params.id;
-    const { full_name, address, email } = req.body;
+    const { full_name, address, email, phone } = req.body;
     const file = req.file;
 
     try {
         await pool.query(`USE ${process.env.DB_NAME}`);
-        let query = 'UPDATE users SET full_name = ?, address = ?, email = ?';
-        let params = [full_name, address, email];
+        let query = 'UPDATE users SET full_name = ?, address = ?, email = ?, phone = ?';
+        let params = [full_name, address, email, phone];
 
         if (file) {
             const avatarUrl = `/uploads/${file.filename}`;
@@ -365,6 +372,7 @@ app.put('/api/users/:id', upload.single('avatar'), async (req, res) => {
                 full_name: user.full_name, 
                 address: user.address, 
                 email: user.email, 
+                phone: user.phone,
                 avatar_url: user.avatar_url 
             } 
         });

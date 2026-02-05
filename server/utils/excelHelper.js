@@ -43,6 +43,17 @@ async function saveOrderToExcel(orderData) {
             }
         });
 
+        const statusMap = {
+            'pending': 'Chờ xử lý',
+            'confirmed': 'Đã xác nhận',
+            'finding_driver': 'Đang tìm tài xế',
+            'driver_assigned': 'Tài xế đang đến shop',
+            'picked_up': 'Đang giao',
+            'delivered': 'Giao hàng thành công',
+            'cancelled': 'Đã hủy'
+        };
+
+        const displayStatus = statusMap[orderData.status] || orderData.status;
         const now = new Date().toLocaleString('vi-VN');
 
         if (rowToUpdate) {
@@ -53,7 +64,7 @@ async function saveOrderToExcel(orderData) {
             if (orderData.shopName) rowToUpdate.getCell('shopName').value = orderData.shopName;
             if (orderData.items) rowToUpdate.getCell('items').value = orderData.items;
             if (orderData.totalPrice) rowToUpdate.getCell('totalPrice').value = orderData.totalPrice;
-            if (orderData.status) rowToUpdate.getCell('status').value = orderData.status;
+            if (orderData.status) rowToUpdate.getCell('status').value = displayStatus;
             rowToUpdate.getCell('updatedAt').value = now;
         } else {
             // Add new row
@@ -65,7 +76,7 @@ async function saveOrderToExcel(orderData) {
                 shopName: orderData.shopName || 'N/A',
                 items: orderData.items || 'N/A',
                 totalPrice: orderData.totalPrice || 0,
-                status: orderData.status || 'pending',
+                status: displayStatus || 'Chờ xử lý',
                 createdAt: now,
                 updatedAt: now
             });
