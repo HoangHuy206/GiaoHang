@@ -8,7 +8,7 @@ async function sendOrderToN8N(orderData) {
             'pending': 'Chờ xử lý',
             'confirmed': 'Đã xác nhận',
             'finding_driver': 'Đang tìm tài xế',
-            'driver_assigned': 'Tài xế đang đến shop',
+            'driver_assigned': 'Tài xế đã nhận đơn',
             'picked_up': 'Đang giao',
             'delivered': 'Giao hàng thành công',
             'cancelled': 'Đã hủy'
@@ -16,10 +16,10 @@ async function sendOrderToN8N(orderData) {
 
         const displayStatus = statusMap[orderData.status] || orderData.status || 'Chờ xử lý';
 
-        // BỘ KHÓA CHUẨN - Dùng để so khớp dòng trong Google Sheets
+        // GỬI ĐÚNG CÁC KEY MÀ BẠN ĐANG DÙNG TRONG N8N
         const payload = {
-            madonhang: orderData.orderId, // Ví dụ: D001
-            khachhang: orderData.customerName || 'Khách hàng',
+            madonhang: orderData.orderId,
+            ten: orderData.customerName && orderData.customerName !== 'NULL' ? orderData.customerName : 'Khách hàng',
             sdt: orderData.phone || 'N/A',
             monan: orderData.items || 'N/A',
             tongtien: typeof orderData.totalPrice === 'number' 
@@ -27,13 +27,14 @@ async function sendOrderToN8N(orderData) {
                 : orderData.totalPrice,
             diachi: orderData.address || 'N/A',
             trangthai: displayStatus,
-            capnhat: new Date().toLocaleString('vi-VN')
+            ngaydat: new Date().toLocaleString('vi-VN')
         };
 
+        console.log("📤 [n8n Payload]:", JSON.stringify(payload, null, 2));
+
         await axios.post(N8N_WEBHOOK_URL, payload);
-        console.log(`🚀 [n8n] Đã gửi/cập nhật đơn hàng ${orderData.orderId} (Trạng thái: ${displayStatus})`);
     } catch (error) {
-        console.error('⚠️ [n8n] Lỗi khi gửi webhook sang n8n:', error.message);
+        console.error('⚠️ [n8n] Error:', error.message);
     }
 }
 
