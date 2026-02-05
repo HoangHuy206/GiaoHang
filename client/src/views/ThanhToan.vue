@@ -273,33 +273,24 @@ export default {
                 }, 3000); 
             };
         
-            const generateNewQR = async () => {
-              try {
-                // Fetch real order code from backend
-                const res = await axios.post(`${API_BASE_URL}/api/orders/pre-reserve`);
-                randomOrderCode.value = res.data.orderCode;
-                const realId = res.data.orderId;
-                
-                paymentStatus.value = 'pending';
-                qrTimeLeft.value = 600;
-                
-                // Join socket room
-                socket.emit('join_room', `order_${realId}`);
-          
-                await axios.post(`${API_BASE_URL}/api/payment/register`, { code: randomOrderCode.value });
-
-                if (timerInterval) clearInterval(timerInterval);
-                timerInterval = setInterval(() => {
-                  if (qrTimeLeft.value > 0) qrTimeLeft.value--;
-                  else generateNewQR();
-                }, 1000);
-          
-                startPollingPayment();
-              } catch (e) {
-                console.error("Lỗi tạo mã thanh toán thật:", e);
-                // Fallback to old random if API fails
-                randomOrderCode.value = 'DH' + Math.floor(Math.random() * 1000000);
-              }
+            const generateNewQR = async (orderId, orderCode) => {
+              randomOrderCode.value = orderCode;
+              paymentStatus.value = 'pending';
+              qrTimeLeft.value = 600;
+              
+              socket.emit('join_room', `order_${orderId}`);
+              await axios.post(`${API_BASE_URL}/api/payment/register`, { code: orderCode });
+        
+              if (timerInterval) clearInterval(timerInterval);
+              timerInterval = setInterval(() => {
+                if (qrTimeLeft.value > 0) qrTimeLeft.value--;
+                else {
+                    alert("Hết thời gian thanh toán!");
+                    location.reload();
+                }
+              }, 1000);
+        
+              startPollingPayment();
             };
     
         onUnmounted(() => { 
@@ -309,13 +300,8 @@ export default {
     
         const selectPayment = (method) => {
           paymentMethod.value = method;
-          if (method === 'banking') {
-              generateNewQR();
-          } else {
-              if (timerInterval) clearInterval(timerInterval);
-              if (checkInterval) clearInterval(checkInterval);
-              paymentStatus.value = 'pending';
-          }
+          // Không tự động tạo QR ở đây nữa
+          paymentStatus.value = 'pending';
         };
 
     const handleConfirmPaid = () => {
@@ -420,14 +406,14 @@ export default {
        if(items.value.length === 0) return alert("Giỏ hàng trống!");
        if(!userInfo.address) return alert("Vui lòng nhập địa chỉ!");
 
-       if (paymentMethod.value === 'banking' && paymentStatus.value !== 'success') {
-           return alert("⚠️ Bạn chưa hoàn tất thanh toán chuyển khoản!");
+       // Nếu đang hiện QR và chưa thanh toán xong thì không cho bấm đặt hàng lại
+       if (paymentMethod.value === 'banking' && randomOrderCode.value && paymentStatus.value === 'pending') {
+           return alert("Vui lòng hoàn tất thanh toán chuyển khoản phía trên!");
        }
 
        dangXuLy.value = true;
 
        try {
-           // Get User ID
            const storedUserStr = localStorage.getItem('user');
            const userObj = storedUserStr ? JSON.parse(storedUserStr) : null;
            const userId = userObj ? userObj.id : null;
@@ -438,15 +424,13 @@ export default {
                return;
            }
 
-           // Get Shop ID (assume all items from same shop, take first one)
            const shopId = items.value[0].shopId;
 
-           // Construct payload for existing API
            const apiPayload = {
                userId: userId,
                shopId: shopId,
                items: items.value.map(i => ({
-                   productId: i.id || i.productId, // Fallback to i.id if i.productId is missing
+                   productId: i.id || i.productId,
                    quantity: i.quantity,
                    price: i.price
                })),
@@ -456,44 +440,45 @@ export default {
                deliveryLng: selectedCoords.value.lng
            };
 
-           // 2. Gửi API lưu vào Database
            const res = await axios.post(`${API_BASE_URL}/api/orders`, apiPayload);
 
-           if (res.data.success || res.status === 200) {
+           if (res.data.success) {
                const orderId = res.data.orderId;
-               const maDonHang = res.data.orderCode || ('DH' + orderId);
+               const maDonHang = res.data.orderCode;
 
-               // [OPTIONAL] Socket emit as per original code (if backend/driver expects it)
-               const socketData = {
-                   ma_don_hang: maDonHang,
-                   orderId: orderId, // Include real DB ID
-                   tai_khoan_khach: userInfo.username || 'guest',
-                   ten_khach_hang: userInfo.name,
-                   ten_mon_an: items.value.map(item => `${item.name} (${item.quantity})`).join(', '),
-                   tong_tien: formatCurrency(finalTotal.value),
-                   ten_quan: shopInfo.value?.name || 'Cửa hàng',
-                   dia_chi_quan: shopInfo.value?.address || 'Địa chỉ quán',
-                   hinh_anh_quan: shopInfo.value?.image_url || '',
-                   lat_don: shopInfo.value?.lat || 21.0499,
-                   lng_don: shopInfo.value?.lng || 105.7405,
-                   dia_chi_giao: userInfo.address,
-                   lat_tra: selectedCoords.value.lat,
-                   lng_tra: selectedCoords.value.lng
-               };
+               if (paymentMethod.value === 'banking') {
+                   // Hiện QR với mã thật
+                   await generateNewQR(orderId, maDonHang);
+                   alert("Đơn hàng đã được lưu. Vui lòng thanh toán qua mã QR phía dưới.");
+                   // Cuộn xuống
+                   nextTick(() => {
+                       const el = document.querySelector('.qr-container');
+                       if (el) el.scrollIntoView({ behavior: 'smooth' });
+                   });
+               } else {
+                   const socketData = {
+                       ma_don_hang: maDonHang,
+                       orderId: orderId,
+                       tai_khoan_khach: userInfo.username || 'guest',
+                       ten_khach_hang: userInfo.name,
+                       ten_mon_an: items.value.map(item => `${item.name} (${item.quantity})`).join(', '),
+                       tong_tien: formatCurrency(finalTotal.value),
+                       ten_quan: shopInfo.value?.name || 'Cửa hàng',
+                       hinh_anh_quan: shopInfo.value?.image_url || '',
+                       dia_chi_giao: userInfo.address,
+                       lat_tra: selectedCoords.value.lat,
+                       lng_tra: selectedCoords.value.lng
+                   };
+                   socket.emit('place_order', socketData);
 
-               console.log("Đặt hàng thành công:", socketData);
-               socket.emit('place_order', socketData);
-
-               // 4. Xóa giỏ hàng & Chuyển hướng
-               alert("Đặt hàng thành công! Đang tìm tài xế...");
-               localStorage.removeItem('tempCart');
-
-               router.push('/theodoidonhang');
+                   alert("Đặt hàng thành công! Mã đơn: " + maDonHang);
+                   localStorage.removeItem('tempCart');
+                   router.push('/theodoidonhang');
+               }
            }
-
        } catch (error) {
            console.error("Lỗi đặt hàng:", error);
-           alert("Lỗi kết nối Server: " + (error.response?.data?.error || error.message));
+           alert("Lỗi: " + (error.response?.data?.message || error.message));
        } finally {
            dangXuLy.value = false;
        }

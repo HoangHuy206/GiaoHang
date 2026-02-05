@@ -684,20 +684,6 @@ app.get('/api/orders/:id/messages', async (req, res) => {
     }
 });
 
-// Pre-reserve an order ID for QR payment consistency
-app.post('/api/orders/pre-reserve', async (req, res) => {
-    try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        // Insert a temporary empty order to get a real ID
-        const [result] = await pool.query('INSERT INTO orders (user_id, shop_id, status, total_price, delivery_address) VALUES (0, 0, "pending", 0, "")');
-        const orderId = result.insertId;
-        const orderCode = generateOrderCode(orderId);
-        res.json({ orderId, orderCode });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
 // Update Order Status
 app.put('/api/orders/:id/status', async (req, res) => {
     const { status, driverId } = req.body;
