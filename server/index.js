@@ -201,11 +201,21 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
+// Route này dành cho SePay (khớp với URL SePay đang gọi: /sepay-hook)
+app.post('/sepay-hook', async (req, res) => {
+    handleWebhook(req, res);
+});
+
 app.post('/api/payment/webhook', async (req, res) => {
+    handleWebhook(req, res);
+});
+
+async function handleWebhook(req, res) {
     let connection;
     try {
         const { content, amount, description, orderCode } = req.body;
-        console.log("Webhook:", req.body);
+        console.log("✅ [Webhook] Received Data:", req.body);
+        
         let detectedOrderCode = null;
         const incomingContent = content || description || orderCode || "";
         const match = incomingContent.match(/((?:D|DH)\s?\d+)/i);
@@ -231,7 +241,7 @@ app.post('/api/payment/webhook', async (req, res) => {
         // 4. Lưu lịch sử giao dịch
         await connection.query(
             'INSERT INTO transactions (order_code, amount, content, gateway) VALUES (?, ?, ?, ?)',
-            [detectedOrderCode, amount, incomingContent, 'webhook']
+            [detectedOrderCode, amount, incomingContent, 'sepay']
         );
 
         // 5. CẬP NHẬT TRẠNG THÁI ĐƠN HÀNG -> finding_driver
@@ -306,7 +316,7 @@ app.post('/api/payment/webhook', async (req, res) => {
     } finally {
         if (connection) connection.release();
     }
-});
+}
 
 // 2. Client polling check trạng thái
 app.get('/api/payment/check/:code', async (req, res) => {
