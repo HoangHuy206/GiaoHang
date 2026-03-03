@@ -71,38 +71,38 @@
               </div>
             </div>
 
-            <div v-if="paymentMethod === 'banking'" class="qr-container">
-              <div v-if="paymentStatus === 'pending'" class="qr-pending">
-                <div class="qr-header">
-                   Quét mã để thanh toán
-                   <span class="timer" :class="{'urgent': qrTimeLeft < 60}">Hết hạn sau: {{ formatTime(qrTimeLeft) }}</span>   
-                </div>
-                <div class="qr-body">
-                   <img :src="qrCodeUrl" alt="QR Code" class="qr-img" />
-                   <div class="qr-details">
-                      <p class="qr-note">Tổng tiền: <strong class="price-highlight">{{ formatCurrency(finalTotal) }}</strong></p>
-                      <p class="qr-note">Nội dung CK: <strong class="code-highlight">{{ randomOrderCode }}</strong></p>        
-                   </div>
-
-                   <div class="auto-check-notify">
-                     <span class="pulse-dot"></span> Đang tự động chờ nhận tiền...
-                   </div>
-
-                   <button class="refresh-qr" @click="generateNewQR(currentOrderId, randomOrderCode)">🔄 Lấy mã mới</button>
-                   <p class="hint-text">*Hệ thống tự động cập nhật và chuyển trang khi nhận tiền</p>
-                </div>
+            <div v-if="paymentMethod === 'banking'" class="payment-banking-info">
+              <div v-if="!randomOrderCode" class="qr-instruction">
+                <p>💡 Bạn vui lòng nhấn nút <strong>"ĐẶT ĐƠN HÀNG"</strong> bên dưới để lấy mã QR thanh toán.</p>
               </div>
 
-              <div v-else-if="paymentStatus === 'processing'" class="qr-processing">
-                 <div class="spinner"></div>
-                 <p>Đang liên hệ ngân hàng...</p>
-                 <p class="sub-text">(Vui lòng đợi giây lát)</p>
-              </div>
+              <div v-else class="qr-container">
+                <div v-if="paymentStatus === 'pending'" class="qr-pending">
+                  <div class="qr-header">
+                     Quét mã để thanh toán
+                     <span class="timer" :class="{'urgent': qrTimeLeft < 60}">Hết hạn sau: {{ formatTime(qrTimeLeft) }}</span>   
+                  </div>
+                  <div class="qr-body">
+                     <img :src="qrCodeUrl" alt="QR Code" class="qr-img" />
+                     <div class="qr-details">
+                        <p class="qr-note">Tổng tiền: <strong class="price-highlight">{{ formatCurrency(finalTotal) }}</strong></p>
+                        <p class="qr-note">Nội dung CK: <strong class="code-highlight">{{ randomOrderCode }}</strong></p>        
+                     </div>
 
-              <div v-else-if="paymentStatus === 'success'" class="qr-success">
-                 <div class="check-icon-circle">✓</div>
-                 <h3>Thanh toán thành công!</h3>
-                 <p>Đơn hàng đã được xác nhận. Đang chuyển trang...</p>
+                     <div class="auto-check-notify">
+                       <span class="pulse-dot"></span> Đang tự động chờ nhận tiền...
+                     </div>
+
+                     <button class="refresh-qr" @click="generateNewQR(currentOrderId, randomOrderCode)">🔄 Lấy mã mới</button>
+                     <p class="hint-text">*Hệ thống tự động cập nhật và chuyển trang khi nhận tiền</p>
+                  </div>
+                </div>
+
+                <div v-else-if="paymentStatus === 'success'" class="qr-success">
+                   <div class="check-icon-circle">✓</div>
+                   <h3>Thanh toán thành công!</h3>
+                   <p>Đơn hàng đã được xác nhận. Đang chuyển trang...</p>
+                </div>
               </div>
             </div>
           </div>
@@ -567,8 +567,12 @@ export default {
 .pay-method.active .radio-circle { border-color: #00b14f; }
 .pay-method.active .radio-circle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 8px; height: 8px; background: #00b14f; border-radius: 50%; }
 
+/* Banking info instruction */
+.payment-banking-info { margin-top: 15px; }
+.qr-instruction { background: #fff8e1; border: 1px solid #ffca28; padding: 15px; border-radius: 8px; text-align: center; color: #856404; font-size: 14px; animation: fadeIn 0.5s; }
+
 /* QR Code Section */
-.qr-container { margin-top: 20px; background: #f8f9fa; padding: 20px; border-radius: 12px; text-align: center; border: 1px dashed #ccc; min-height: 350px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+.qr-container { background: #f8f9fa; padding: 20px; border-radius: 12px; text-align: center; border: 1px dashed #ccc; min-height: 350px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
 .qr-header { font-weight: bold; margin-bottom: 15px; width: 100%; display: flex; justify-content: space-between; align-items: center; }
 .timer { color: #d63031; font-family: monospace; font-size: 16px; background: white; padding: 4px 8px; border-radius: 4px; border: 1px solid #eee; }
 .timer.urgent { color: red; font-weight: bold; animation: pulse 1s infinite; }
