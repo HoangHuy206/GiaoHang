@@ -83,11 +83,13 @@
                       <p class="qr-note">Tổng tiền: <strong class="price-highlight">{{ formatCurrency(finalTotal) }}</strong></p>
                       <p class="qr-note">Nội dung CK: <strong class="code-highlight">{{ randomOrderCode }}</strong></p>        
                    </div>
-                   <button class="confirm-paid-btn" @click="handleConfirmPaid">
-                     ✅ Tôi đã chuyển khoản xong
-                   </button>
-                   <button class="refresh-qr" @click="generateNewQR">🔄 Lấy mã mới</button>
-                   <p class="hint-text">*Hệ thống tự động cập nhật khi nhận tiền</p>
+
+                   <div class="auto-check-notify">
+                     <span class="pulse-dot"></span> Đang tự động chờ nhận tiền...
+                   </div>
+
+                   <button class="refresh-qr" @click="generateNewQR(currentOrderId, randomOrderCode)">🔄 Lấy mã mới</button>
+                   <p class="hint-text">*Hệ thống tự động cập nhật và chuyển trang khi nhận tiền</p>
                 </div>
               </div>
 
@@ -100,7 +102,7 @@
               <div v-else-if="paymentStatus === 'success'" class="qr-success">
                  <div class="check-icon-circle">✓</div>
                  <h3>Thanh toán thành công!</h3>
-                 <p>Đơn hàng đã được xác nhận.</p>
+                 <p>Đơn hàng đã được xác nhận. Đang chuyển trang...</p>
               </div>
             </div>
           </div>
@@ -176,6 +178,7 @@ export default {
     const showMapModal = ref(false);
     const tempSelectedAddress = ref('');
     const dangXuLy = ref(false);
+    const currentOrderId = ref(null);
 
     // Tọa độ mặc định người nhận (Hà Nội)
     const selectedCoords = ref({ lat: 21.0285, lng: 105.8542 });
@@ -183,24 +186,43 @@ export default {
     let mapInstance = null;
     let markerInstance = null;
 
-    const bankId = 'ICB';
-    const accountNo = '101882796072';
+    const bankId = 'MB';
+    const accountNo = '0396222614';
 
     const randomOrderCode = ref('');
     const qrTimeLeft = ref(600);
     let timerInterval = null;
+    let checkInterval = null;
     const paymentStatus = ref('pending');
 
     const userInfo = reactive({ name: '', phone: '', address: '', username: '' });
     const shippingRates = { priority: 36000, fast: 28000, saver: 22000 };
 
+    // HÀM XỬ LÝ KHI THANH TOÁN THÀNH CÔNG (Dùng chung cho cả Socket và Polling)
+    const onPaymentSuccess = () => {
+        if (paymentStatus.value === 'success') return; // Tránh chạy 2 lần
+        
+        paymentStatus.value = 'success';
+        if (timerInterval) clearInterval(timerInterval);
+        if (checkInterval) clearInterval(checkInterval);
+
+        // Xóa sạch giỏ hàng
+        localStorage.removeItem('tempCart');
+        items.value = []; 
+
+        alert("🎉 Ting ting! Hệ thống đã nhận được tiền. Thanh toán thành công!");
+
+        // Tự động chuyển hướng sau 2 giây
+        setTimeout(() => {
+            router.push('/theodoidonhang');
+        }, 2000);
+    };
+
     onMounted(async () => {
       // Lắng nghe sự kiện thanh toán thành công tức thì qua Socket
       socket.on('payment_success', (data) => {
           console.log("🔔 Nhận tín hiệu thanh toán thành công tức thì:", data);
-          paymentStatus.value = 'success';
-          if (timerInterval) clearInterval(timerInterval);
-          if (checkInterval) clearInterval(checkInterval);
+          onPaymentSuccess();
       });
 
       // Load Leaflet
@@ -235,8 +257,6 @@ export default {
       }
     });
 
-    onUnmounted(() => { if (timerInterval) clearInterval(timerInterval); });
-
     const subTotal = computed(() => items.value.reduce((sum, item) => sum + (item.price * item.quantity), 0));
     const shipPrice = computed(() => shippingRates[selectedShip.value]);
     const finalTotal = computed(() => subTotal.value + shipPrice.value);
@@ -249,9 +269,7 @@ export default {
                     // Thêm timestamp ?t= để chống cache trình duyệt
                     const res = await axios.get(`${API_BASE_URL}/api/payment/check/${randomOrderCode.value}?t=${Date.now()}`);
                     if (res.data.paid) {
-                        paymentStatus.value = 'success';
-                        if (timerInterval) clearInterval(timerInterval);
-                        if (checkInterval) clearInterval(checkInterval);
+                        onPaymentSuccess();
                         return true;
                     }
                 } catch (e) {
@@ -444,6 +462,7 @@ export default {
 
            if (res.data.success) {
                const orderId = res.data.orderId;
+               currentOrderId.value = orderId;
                const maDonHang = res.data.orderCode; 
                randomOrderCode.value = maDonHang; // Dùng mã Dxxx thật từ Server
 
@@ -489,8 +508,7 @@ export default {
       setHardLocation, submitOrder, selectPayment,
       qrCodeUrl, qrTimeLeft, formatTime, generateNewQR, randomOrderCode,
       showMapModal, openMapModal, closeMap, tempSelectedAddress, confirmMapSelection,
-      paymentStatus, handleConfirmPaid,
-      selectedCoords, dangXuLy
+      paymentStatus, selectedCoords, dangXuLy, currentOrderId
     };
   }
 }
@@ -565,9 +583,13 @@ export default {
 .price-highlight { color: #00b14f; font-size: 16px; }
 .code-highlight { color: #2980b9; font-size: 16px; letter-spacing: 1px; }
 
+/* CSS THÊM CHO THÔNG BÁO TỰ ĐỘNG CHỜ TIỀN */
+.auto-check-notify { margin-top: 15px; font-size: 15px; font-weight: 600; color: #e67e22; display: flex; align-items: center; gap: 8px; animation: fadeInOut 2s infinite; }
+.pulse-dot { width: 10px; height: 10px; background-color: #e67e22; border-radius: 50%; display: inline-block; animation: pulseDot 1.5s infinite; }
+@keyframes pulseDot { 0% { transform: scale(0.8); opacity: 0.5; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.8); opacity: 0.5; } }
+@keyframes fadeInOut { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
+
 /* BUTTONS */
-.confirm-paid-btn { background: #00b14f; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer; margin-top: 15px; width: 100%; max-width: 300px; transition: background 0.2s; box-shadow: 0 4px 6px rgba(0, 177, 79, 0.2); }
-.confirm-paid-btn:hover { background: #009e39; transform: translateY(-1px); }
 .refresh-qr { background: #555; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; transition: 0.2s; }
 .refresh-qr:hover { background: #333; }
 .hint-text { font-size: 12px; color: #888; margin-top: 10px; font-style: italic; }

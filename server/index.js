@@ -208,7 +208,7 @@ app.post('/api/payment/webhook', async (req, res) => {
         console.log("Webhook:", req.body);
         let detectedOrderCode = null;
         const incomingContent = content || description || orderCode || "";
-        const match = incomingContent.match(/(DH\s?\d+)/i);
+        const match = incomingContent.match(/((?:D|DH)\s?\d+)/i);
         if (match) {
             detectedOrderCode = match[1].replace(/\s/g, '').toUpperCase();
         } else {

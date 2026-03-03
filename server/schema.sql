@@ -81,3 +81,12 @@ CREATE TABLE IF NOT EXISTS messages (
   FOREIGN KEY (order_id) REFERENCES orders(id),
   FOREIGN KEY (sender_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  order_code VARCHAR(50) NOT NULL,
+  amount DECIMAL(10, 2) NOT NULL,
+  content TEXT,
+  gateway VARCHAR(50),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
