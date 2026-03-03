@@ -277,9 +277,6 @@ export default {
                 }
                 return false;
             };
-
-        
-            let checkInterval = null;
         
             const startPollingPayment = () => {
                 if (checkInterval) clearInterval(checkInterval);
