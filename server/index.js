@@ -213,8 +213,12 @@ app.post('/api/payment/webhook', async (req, res) => {
 async function handleWebhook(req, res) {
     let connection;
     try {
-        const { content, amount, description, orderCode } = req.body;
+        // SePay dùng 'transferAmount', các bên khác dùng 'amount'
+        const { content, amount, transferAmount, description, orderCode } = req.body;
         console.log("✅ [Webhook] Received Data:", req.body);
+        
+        // Ưu tiên lấy transferAmount từ SePay nếu amount bị trống
+        const finalAmount = amount || transferAmount || 0;
         
         let detectedOrderCode = null;
         const incomingContent = content || description || orderCode || "";
@@ -230,7 +234,7 @@ async function handleWebhook(req, res) {
             return res.status(400).json({ success: false, message: "No order code found in content" });
         }
 
-        console.log(`✅ [Webhook] Identified Order: ${detectedOrderCode}, Amount: ${amount}`);
+        console.log(`✅ [Webhook] Identified Order: ${detectedOrderCode}, Amount: ${finalAmount}`);
 
         // Trích xuất ID số từ mã DH (ví dụ DH123 -> 123) để update vào DB
         const orderIdNum = parseInt(detectedOrderCode.replace(/\D/g, ''));
@@ -238,10 +242,10 @@ async function handleWebhook(req, res) {
         connection = await pool.getConnection();
         await connection.beginTransaction();
 
-        // 4. Lưu lịch sử giao dịch
+        // 4. Lưu lịch sử giao dịch (Sửa amount thành finalAmount)
         await connection.query(
             'INSERT INTO transactions (order_code, amount, content, gateway) VALUES (?, ?, ?, ?)',
-            [detectedOrderCode, amount, incomingContent, 'sepay']
+            [detectedOrderCode, finalAmount, incomingContent, 'sepay']
         );
 
         // 5. CẬP NHẬT TRẠNG THÁI ĐƠN HÀNG -> finding_driver
