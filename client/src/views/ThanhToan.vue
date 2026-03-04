@@ -201,23 +201,24 @@ export default {
     // HÀM XỬ LÝ KHI THANH TOÁN THÀNH CÔNG (Dùng chung cho cả Socket và Polling)
     const onPaymentSuccess = () => {
         if (paymentStatus.value === 'success') return; // Tránh chạy 2 lần
-        
+
         paymentStatus.value = 'success';
         if (timerInterval) clearInterval(timerInterval);
         if (checkInterval) clearInterval(checkInterval);
 
+        // Phát âm thanh Ting Ting khi thanh toán thành công
+        const audio = new Audio('/sounds/Download-_1_.mp3');
+        audio.play().catch(err => console.error("Không thể phát âm thanh:", err));
+
         // Xóa sạch giỏ hàng
         localStorage.removeItem('tempCart');
-        items.value = []; 
+        items.value = [];
 
-        alert("🎉 Ting ting! Hệ thống đã nhận được tiền. Thanh toán thành công!");
-
-        // Tự động chuyển hướng sau 2 giây
+        // Tự động chuyển hướng sau 3 giây để người dùng kịp thấy thông báo thành công
         setTimeout(() => {
             router.push('/theodoidonhang');
-        }, 2000);
+        }, 3000);
     };
-
     onMounted(async () => {
       // Lắng nghe sự kiện thanh toán thành công tức thì qua Socket
       socket.on('payment_success', (data) => {
