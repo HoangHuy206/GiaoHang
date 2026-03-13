@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const N8N_WEBHOOK_URL = 'https://n8n-ibpj.onrender.com/webhook/dathang';
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://n8n.giaohangtannoi.id.vn/webhook/dathang';
 
 async function sendOrderToN8N(orderData) {
     try {

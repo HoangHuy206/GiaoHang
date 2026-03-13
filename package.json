@@ -30,6 +30,8 @@
     "multer": "^2.0.2",
     "mysql2": "^3.16.1",
     "n8n": "^2.6.3",
+    "node-cron": "^4.2.1",
+    "node-telegram-bot-api": "^0.67.0",
     "nodemailer": "^7.0.12",
     "nodemon": "^3.1.11",
     "pinia": "^3.0.4",

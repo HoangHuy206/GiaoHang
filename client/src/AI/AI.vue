@@ -76,11 +76,12 @@
 </template>
 
 <script setup>
-import { ref, nextTick, watch, computed } from 'vue';
+import { ref, nextTick, watch, computed, onMounted } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import aiAvatar from '../assets/img/anh.logo/anh-AI.png';
+import { botBus } from '../utils/botBus';
 
 const isOpen = ref(false);
 const messages = ref([]);
@@ -172,4 +173,11 @@ const sendMessage = async () => {
   newMessage.value = '';
   await processMessage(text);
 };
+
+onMounted(() => {
+  botBus.on('notify', (data) => {
+    isOpen.value = true; // Tự động mở chat khi có thông báo
+    addMessage(data.message);
+  });
+});
 </script>

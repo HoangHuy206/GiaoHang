@@ -72,6 +72,17 @@
             </div>
 
             <div v-if="paymentMethod === 'banking'" class="payment-banking-info">
+              <!-- Thêm phần nhập thông tin ngân hàng của khách để hoàn tiền -->
+              <div class="customer-bank-form section-card">
+                <div class="section-subtitle">🏦 Thông tin hoàn tiền của bạn (Nếu có sự cố)</div>
+                <div class="bank-inputs">
+                  <input v-model="customerBank.bankCode" placeholder="Mã Ngân hàng (Ví dụ: MB, VCB...)" class="bank-input">
+                  <input v-model="customerBank.accountNumber" placeholder="Số tài khoản của bạn" class="bank-input">
+                  <input v-model="customerBank.accountName" placeholder="Tên chủ tài khoản (Không dấu)" class="bank-input">
+                </div>
+                <p class="hint-text-small">*Dùng để shop hoàn tiền tự động nếu đơn hàng quá 1 tiếng không xử lý.</p>
+              </div>
+
               <div v-if="!randomOrderCode" class="qr-instruction">
                 <p>💡 Bạn vui lòng nhấn nút <strong>"ĐẶT ĐƠN HÀNG"</strong> bên dưới để lấy mã QR thanh toán.</p>
               </div>
@@ -196,6 +207,7 @@ export default {
     const paymentStatus = ref('pending');
 
     const userInfo = reactive({ name: '', phone: '', address: '', username: '' });
+    const customerBank = reactive({ bankCode: '', accountNumber: '', accountName: '' });
     const shippingRates = { priority: 36000, fast: 28000, saver: 22000 };
 
     // HÀM XỬ LÝ KHI THANH TOÁN THÀNH CÔNG (Dùng chung cho cả Socket và Polling)
@@ -258,12 +270,40 @@ export default {
       }
     });
 
-    const subTotal = computed(() => items.value.reduce((sum, item) => sum + (item.price * item.quantity), 0));
-    const shipPrice = computed(() => shippingRates[selectedShip.value]);
-    const finalTotal = computed(() => subTotal.value + shipPrice.value);
-    const formatCurrency = (val) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);        
+    const subTotal = computed(() => {
+        return items.value.reduce((sum, item) => {
+            const price = Number(item.price) || 0;
+            const quantity = Number(item.quantity) || 1;
+            return sum + (price * quantity);
+        }, 0);
+    });
 
-    const qrCodeUrl = computed(() => `https://img.vietqr.io/image/${bankId}-${accountNo}-qr_only.png?amount=${finalTotal.value}&addInfo=${randomOrderCode.value}`);
+    const shipPrice = computed(() => Number(shippingRates[selectedShip.value]) || 0);
+
+    const finalTotal = computed(() => {
+        let total = subTotal.value + shipPrice.value;
+        // Trừ khuyến mãi vận chuyển (14.000đ) chỉ khi chọn gói 'saver'
+        if (selectedShip.value === 'saver') {
+            total = Math.max(0, total - 14000);
+        }
+        return total;
+    });
+
+    const formatCurrency = (val) => {
+        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
+    };        
+
+    const qrCodeUrl = computed(() => {
+        const bId = shopInfo.value?.bank_code || 'MB';
+        const accNo = shopInfo.value?.bank_account || '0396222614';
+        
+        if (!randomOrderCode.value) return '';
+
+        // Sử dụng giá trị finalTotal đã tính toán chính xác
+        const amount = Math.round(finalTotal.value);
+
+        return `https://img.vietqr.io/image/${bId}-${accNo}-qr_only.png?amount=${amount}&addInfo=${randomOrderCode.value}`;
+    });
 
             const checkPaymentStatus = async () => {
                 try {
@@ -293,12 +333,11 @@ export default {
               randomOrderCode.value = orderCode;
               paymentStatus.value = 'pending';
               qrTimeLeft.value = 600;
-              
+
               socket.emit('join_room', `order_${orderId}`);
-              await axios.post(`${API_BASE_URL}/api/payment/register`, { code: orderCode });
-        
-              if (timerInterval) clearInterval(timerInterval);
-              timerInterval = setInterval(() => {
+              // Đã xóa API /api/payment/register vì server không cần đăng ký trước
+
+              if (timerInterval) clearInterval(timerInterval);              timerInterval = setInterval(() => {
                 if (qrTimeLeft.value > 0) qrTimeLeft.value--;
                 else {
                     alert("Hết thời gian thanh toán!");
@@ -435,13 +474,13 @@ export default {
            const userId = userObj ? userObj.id : null;
 
            if (!userId) {
-               alert("Vui lòng đăng nhập lại!");
+               alert("Vui lòng đăng nhập lại!");      
                router.push('/login');
                return;
            }
 
-           const shopId = items.value[0].shopId;
 
+           const shopId = items.value[0].shopId;
            const apiPayload = {
                userId: userId,
                shopId: shopId,
@@ -451,9 +490,15 @@ export default {
                    price: i.price
                })),
                totalPrice: finalTotal.value,
+               itemsPrice: subTotal.value,
+               deliveryFee: shipPrice.value,
+               discount: selectedShip.value === 'saver' ? 14000 : 0,
                deliveryAddress: userInfo.address,
                deliveryLat: selectedCoords.value.lat,
-               deliveryLng: selectedCoords.value.lng
+               deliveryLng: selectedCoords.value.lng,
+               customerBankCode: customerBank.bankCode,
+               customerBankAccount: customerBank.accountNumber,
+               customerBankName: customerBank.accountName
            };
 
            const res = await axios.post(`${API_BASE_URL}/api/orders`, apiPayload);
@@ -467,7 +512,7 @@ export default {
                if (paymentMethod.value === 'banking') {
                    // Hiện QR với mã thật Dxxx
                    await generateNewQR(orderId, maDonHang);
-                   alert("Đơn hàng đã được lưu. Vui lòng thanh toán qua mã QR phía dưới.");
+                   alert("Vui lòng thanh toán qua mã QR phía dưới.");
                    nextTick(() => {
                        const el = document.querySelector('.qr-container');
                        if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -501,7 +546,7 @@ export default {
     };
 
     return {
-      items, userInfo, selectedShip, paymentMethod,
+      items, userInfo, customerBank, selectedShip, paymentMethod,
       subTotal, finalTotal, shipPrice, formatCurrency,
       setHardLocation, submitOrder, selectPayment,
       qrCodeUrl, qrTimeLeft, formatTime, generateNewQR, randomOrderCode,
@@ -595,6 +640,11 @@ export default {
 .refresh-qr { background: #555; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; transition: 0.2s; }
 .refresh-qr:hover { background: #333; }
 .hint-text { font-size: 12px; color: #888; margin-top: 10px; font-style: italic; }
+.hint-text-small { font-size: 11px; color: #7f8c8d; margin-top: 5px; }
+.section-subtitle { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #2c3e50; }
+.bank-inputs { display: flex; flex-direction: column; gap: 10px; }
+.bank-input { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+.bank-input:focus { border-color: #00b14f; outline: none; }
 
 /* SPINNER & SUCCESS */
 .qr-processing { display: flex; flex-direction: column; align-items: center; justify-content: center; animation: fadeIn 0.5s; }

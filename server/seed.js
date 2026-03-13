@@ -113,15 +113,30 @@ async function seed() {
       const lng = 105.7480 + (Math.random() - 0.5) * 0.05;
       const address = `Số ${Math.floor(Math.random() * 200) + 1} Đường Cầu Diễn, Bắc Từ Liêm, Hà Nội`;
 
+      // Map bank accounts per shop ID (1-based index based on seed order)
+      const shopBanks = {
+          1: { code: 'MB', account: '0396222614' },
+          2: { code: 'ICB', account: '101882796069' },
+          3: { code: 'ICB', account: '103882796067' },
+          4: { code: 'MB', account: '0396222614' },
+          5: { code: 'MB', account: '0396222614' },
+          6: { code: 'MB', account: '0396222614' },
+          7: { code: 'MB', account: '0396222614' }
+      };
+      
+      const currentShopIndex = shops.indexOf(shopData) + 1;
+      const bankInfo = shopBanks[currentShopIndex] || { code: 'MB', account: '0396222614' };
+
       if (existingShops.length === 0) {
           const [shopResult] = await connection.query(
-              'INSERT INTO shops (name, user_id, image_url, address, lat, lng) VALUES (?, ?, ?, ?, ?, ?)',
-              [shopData.name, userId, shopImageUrl, address, lat, lng]
+              'INSERT INTO shops (name, user_id, image_url, address, lat, lng, bank_code, bank_account) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+              [shopData.name, userId, shopImageUrl, address, lat, lng, bankInfo.code, bankInfo.account]
           );
           shopId = shopResult.insertId;
       } else {
           shopId = existingShops[0].id;
-          await connection.query('UPDATE shops SET image_url = ?, address = ?, lat = ?, lng = ? WHERE id = ?', [shopImageUrl, address, lat, lng, shopId]);
+          await connection.query('UPDATE shops SET image_url = ?, address = ?, lat = ?, lng = ?, bank_code = ?, bank_account = ? WHERE id = ?', 
+              [shopImageUrl, address, lat, lng, bankInfo.code, bankInfo.account, shopId]);
       }
 
       // Create Products

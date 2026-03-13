@@ -43,13 +43,53 @@
               <button type="button" class="btn btn-register">Đăng ký</button>
             </router-link>
 
-            <a href="#" style="margin-left: 60%; color: blue; text-decoration: none; font-size: 14px;">
+            <a href="#" @click.prevent="showForgotModal = true" style="margin-left: 60%; color: blue; text-decoration: none; font-size: 14px;">
               Quên mật khẩu
             </a>
           </form>
         </div>
       </div>
 
+    </div>
+
+    <!-- Forgot Password Modal -->
+    <div v-if="showForgotModal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Quên mật khẩu</h3>
+          <button @click="closeForgotModal" class="close-btn">&times;</button>
+        </div>
+        
+        <div v-if="forgotStep === 1" class="modal-body">
+          <p>Nhập email liên kết với tài khoản của bạn để nhận mã xác thực.</p>
+          <div class="input-group">
+            <input type="email" v-model="forgotEmail" placeholder="Email của bạn..." required />
+          </div>
+          <button @click="handleSendCode" class="btn btn-login" :disabled="forgotLoading">
+            {{ forgotLoading ? 'Đang gửi mã...' : 'Gửi mã xác nhận' }}
+          </button>
+        </div>
+
+        <div v-if="forgotStep === 2" class="modal-body">
+          <p>Mã xác thực 6 số đã được gửi tới <strong>{{ forgotEmail }}</strong>. Mã có hiệu lực trong 5 phút.</p>
+          <div class="input-group">
+            <input type="text" v-model="forgotCode" placeholder="Nhập mã 6 số..." maxlength="6" required />
+          </div>
+          <button @click="handleVerifyCode" class="btn btn-login" :disabled="forgotLoading">Tiếp theo</button>
+          <button @click="forgotStep = 1" class="btn-text">Quay lại</button>
+        </div>
+
+        <div v-if="forgotStep === 3" class="modal-body">
+          <p>Nhập mật khẩu mới cho tài khoản của bạn.</p>
+          <div class="input-group">
+            <input type="password" v-model="newPassword" placeholder="Mật khẩu mới..." required />
+          </div>
+          <div class="input-group">
+            <input type="password" v-model="confirmPassword" placeholder="Xác nhận mật khẩu mới..." required />
+          </div>
+          <button @click="handleResetPassword" class="btn btn-login" :disabled="forgotLoading">Cập nhật mật khẩu</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -58,6 +98,8 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import axios from 'axios';
+import { API_BASE_URL } from '../config';
 import shipperImgSource from '@/assets/img/anh.logo/anhbiadangnhap1.png';
 
 const auth = useAuthStore();
@@ -65,6 +107,71 @@ const router = useRouter();
 const username = ref('');
 const password = ref('');
 const loading = ref(false);
+
+// Forgot Password State
+const showForgotModal = ref(false);
+const forgotStep = ref(1);
+const forgotEmail = ref('');
+const forgotCode = ref('');
+const newPassword = ref('');
+const confirmPassword = ref('');
+const forgotLoading = ref(false);
+
+const closeForgotModal = () => {
+  showForgotModal.value = false;
+  forgotStep.value = 1;
+  forgotEmail.value = '';
+  forgotCode.value = '';
+  newPassword.value = '';
+  confirmPassword.value = '';
+};
+
+const handleSendCode = async () => {
+  if (!forgotEmail.value) return alert("Vui lòng nhập email!");
+  forgotLoading.value = true;
+  try {
+    const res = await axios.post(`${API_BASE_URL}/api/forgot-password`, { email: forgotEmail.value });
+    alert(res.data.message);
+    forgotStep.value = 2;
+  } catch (err) {
+    alert(err.response?.data?.error || "Lỗi gửi mã!");
+  } finally {
+    forgotLoading.value = false;
+  }
+};
+
+const handleVerifyCode = async () => {
+  if (forgotCode.value.length !== 6) return alert("Mã xác thực phải có 6 số!");
+  forgotLoading.value = true;
+  try {
+    await axios.post(`${API_BASE_URL}/api/verify-code`, { email: forgotEmail.value, code: forgotCode.value });
+    forgotStep.value = 3;
+  } catch (err) {
+    alert(err.response?.data?.error || "Mã không đúng hoặc hết hạn!");
+  } finally {
+    forgotLoading.value = false;
+  }
+};
+
+const handleResetPassword = async () => {
+  if (newPassword.value.length < 6) return alert("Mật khẩu phải từ 6 ký tự!");
+  if (newPassword.value !== confirmPassword.value) return alert("Mật khẩu xác nhận không khớp!");
+  
+  forgotLoading.value = true;
+  try {
+    const res = await axios.post(`${API_BASE_URL}/api/reset-password`, {
+      email: forgotEmail.value,
+      code: forgotCode.value,
+      newPassword: newPassword.value
+    });
+    alert(res.data.message);
+    closeForgotModal();
+  } catch (err) {
+    alert(err.response?.data?.error || "Lỗi đổi mật khẩu!");
+  } finally {
+    forgotLoading.value = false;
+  }
+};
 
 // Sử dụng ảnh minh họa shipper
 const shipperImg = ref(shipperImgSource);
@@ -80,7 +187,10 @@ const handleLogin = async () => {
     await auth.login(username.value, password.value);
     
     // Phân quyền điều hướng dựa trên logic dự án hiện tại
-    if (auth.user.role === 'driver') {
+    if (auth.user.role === 'admin') {
+      alert(`Xin chào Admin ${auth.user.full_name || auth.user.username}!`);
+      router.push('/admin');
+    } else if (auth.user.role === 'driver') {
       alert(`Xin chào Tài xế ${auth.user.full_name || auth.user.username}!`);
       router.push('/trangchutaixe'); 
     } else if (auth.user.role === 'shop') {
@@ -265,5 +375,73 @@ const handleLogin = async () => {
     padding: 30px 20px;
     border-radius: 20px;
   }
-}
-</style>
+  }
+
+  /* Modal Styles */
+  .modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+  }
+
+  .modal-content {
+  background: white;
+  padding: 30px;
+  border-radius: 20px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  position: relative;
+  }
+
+  .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  }
+
+  .modal-header h3 {
+  margin: 0;
+  color: #2e7d32;
+  font-family: 'Merriweather', serif;
+  }
+
+  .close-btn {
+  background: none;
+  border: none;
+  font-size: 28px;
+  cursor: pointer;
+  color: #999;
+  }
+
+  .modal-body p {
+  font-size: 14px;
+  color: #666;
+  line-height: 1.5;
+  margin-bottom: 20px;
+  }
+
+  .btn-text {
+  background: none;
+  border: none;
+  color: #FF9900;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 15px;
+  width: 100%;
+  text-align: center;
+  }
+
+  .btn-text:hover {
+  text-decoration: underline;
+  }
+  </style>

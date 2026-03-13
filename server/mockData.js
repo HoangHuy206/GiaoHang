@@ -6,7 +6,9 @@ const MOCK_SHOPS = [
         image_url: "https://example.com/pho.jpg",
         address: "49 Bát Đàn, Hà Nội",
         lat: 21.032,
-        lng: 105.848
+        lng: 105.848,
+        bank_code: "MB",
+        bank_account: "0396222614"
     },
     {
         id: 2,
@@ -15,7 +17,9 @@ const MOCK_SHOPS = [
         image_url: "https://example.com/buncha.jpg",
         address: "24 Lê Văn Hưu, Hà Nội",
         lat: 21.018,
-        lng: 105.855
+        lng: 105.855,
+        bank_code: "MB",
+        bank_account: "0396222614"
     },
     {
         id: 3,
@@ -24,7 +28,9 @@ const MOCK_SHOPS = [
         image_url: "https://example.com/comtam.jpg",
         address: "59 Nguyễn Du, Hà Nội",
         lat: 21.022,
-        lng: 105.842
+        lng: 105.842,
+        bank_code: "MB",
+        bank_account: "0396222614"
     },
     {
         id: 4,
@@ -33,7 +39,9 @@ const MOCK_SHOPS = [
         image_url: "https://example.com/toco.jpg",
         address: "102 Cầu Giấy, Hà Nội",
         lat: 21.035,
-        lng: 105.795
+        lng: 105.795,
+        bank_code: "MB",
+        bank_account: "0396222614"
     }
 ];
 

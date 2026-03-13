@@ -6,9 +6,24 @@ import StandardHeader from '../components/StandardHeader.vue'
 import { API_BASE_URL } from '../config'
 
 const getImageUrl = (url) => {
-    if (!url) return '';
-    if (url.startsWith('http')) return url.replace('http://localhost:3000', API_BASE_URL);
-    return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+    if (!url) return new URL('@/assets/img/anhND/anhdaidienmacdinh.jpg', import.meta.url).href;
+    
+    // Danh sách các ảnh gốc trong thư mục anhND
+    const assetImages = ['comngon.jpg', 'lotte.jpg', 'comtho.jpg', 'gaham.jpg', 'toco.jpg', 'buncham.jpg', 'mixue.jpg', 'anhdaidienmacdinh.jpg'];
+    
+    // Lấy tên file nguyên bản (loại bỏ đường dẫn nếu có)
+    const fileName = url.split('/').pop();
+
+    if (assetImages.includes(fileName)) {
+        // Nếu là ảnh trong assets, dùng URL động của Vite
+        // Lưu ý: Phải viết đường dẫn tường minh để Vite nhận diện được lúc build
+        return new URL(`../assets/img/anhND/${fileName}`, import.meta.url).href;
+    }
+
+    if (url.startsWith('http')) return url;
+    
+    const path = url.startsWith('/') ? url : `/${url}`;
+    return `${API_BASE_URL}${path}`;
 };
 
 // --- 2. IMPORT EVENT BUS TỪ GIỎ HÀNG (Mới thêm) ---
@@ -77,22 +92,14 @@ const prevSlide = () => { currentIndex.value = (currentIndex.value - 1 + images.
 
 let timer = null
 
-// --- DANH SÁCH NHÀ HÀNG ---
-const restaurants = ref([
-  { id: 1, name: "Phở gà anh thư", type: "Cơm , phở ", rating: 4.9, time: "30 phút", distance: "4.4 km", promo: "Giảm 15.000đ", image: new URL('@/assets/img/anhND/comngon.jpg', import.meta.url).href, isFavorite: false },
-  { id: 2, name: "Lotteria - Vincom Smart City", type: "đồ uống", rating: 3.8, time: "25 phút", distance: "2.8 km", promo: "Tặng Menu", image: new URL('@/assets/img/anhND/lotte.jpg', import.meta.url).href, isFavorite: false },
-  { id: 3, name: "Cơm bình dân", type: "Cơm", rating: 4.9, time: "30 phút", distance: "4.4 km", promo: "Giảm 15.000đ", image: new URL('@/assets/img/anhND/comtho.jpg', import.meta.url).href, isFavorite: false },
-  { id: 4, name: "Cơm Gà hầm", type: "Cơm, Thức ăn nhanh", rating: 4.9, time: "30 phút", distance: "4.4 km", promo: "Giảm 15.000đ", image: new URL('@/assets/img/anhND/gaham.jpg', import.meta.url).href, isFavorite: false },
-  { id: 5, name: "Tocotoco", type: "đồ uống", rating: 4.9, time: "30 phút", distance: "4.4 km", promo: "Giảm 15.000đ", image: new URL('@/assets/img/anhND/toco.jpg', import.meta.url).href, isFavorite: false },
-  { id: 6, name: "Bún chấm", type: "đồ ăn chín", rating: 4.9, time: "30 phút", distance: "4.4 km", promo: "Giảm 15.000đ", image: new URL('@/assets/img/anhND/buncham.jpg', import.meta.url).href, isFavorite: false },
-  { id: 7, name: "Mixue", type: "đồ uống", rating: 4.9, time: "30 phút", distance: "4.4 km", promo: "Giảm 15.000đ", image: new URL('@/assets/img/anhND/mixue.jpg', import.meta.url).href, isFavorite: false },
-])
+// --- DANH SÁCH NHÀ HÀNG (Sẽ được load từ API) ---
+const restaurants = ref([])
 
 const allProducts = ref([])
 
 // --- HÀM LẤY USER TỪ LOCALSTORAGE ---
 const getCurrentUser = () => {
-    const userStr = localStorage.getItem('user'); // Fixed: user instead of userLogin
+    const userStr = localStorage.getItem('user');
     if (userStr) return JSON.parse(userStr);
     return null;
 }
@@ -101,22 +108,38 @@ onMounted(async () => {
   timer = setInterval(nextSlide, 4000)
   
   try {
-      // Fetch all products for search
+      // 1. Fetch real shops from API
+      const shopsRes = await axios.get(`${API_BASE_URL}/api/shops`);
+      // Map API data to match the UI format
+      restaurants.value = shopsRes.data.map(s => ({
+          id: s.id,
+          name: s.name,
+          type: "Quán ăn", // Default type since API doesn't have it yet
+          rating: 4.9, 
+          time: "30-40 phút",
+          distance: "2.5 km",
+          promo: "Giảm 10%",
+          image: s.image_url, // API image_url
+          isFavorite: false
+      }));
+
+      // 2. Fetch all products for search
       const prodRes = await axios.get(`${API_BASE_URL}/api/products`);
       allProducts.value = prodRes.data;
   } catch (error) {
-      console.error("Lỗi tải danh sách món ăn:", error);
+      console.error("Lỗi tải dữ liệu hệ thống:", error);
   }
 
   // --- LOGIC MỚI: ĐỒNG BỘ TRÁI TIM TỪ DATABASE ---
   const currentUser = getCurrentUser();
-  if (currentUser && currentUser.id) { // Fixed: id instead of account_id
+  if (currentUser && currentUser.id) {
       try {
           const res = await axios.get(`${API_BASE_URL}/api/like/${currentUser.id}`); 
-          const likedList = res.data; 
+          const likedList = Array.isArray(res.data) ? res.data : []; 
 
           restaurants.value.forEach(r => {
-              const isLiked = likedList.some(dbItem => dbItem.MaQuan === r.id);
+              // Kiểm tra shop_id từ bảng favorites
+              const isLiked = likedList.some(dbItem => dbItem.shop_id === r.id);
               if (isLiked) r.isFavorite = true;
           });
       } catch (error) {
@@ -231,7 +254,7 @@ const filteredFoods = computed(() => {
         <div v-for="res in filteredRestaurants" :key="res.id" class="restaurant-card-wrapper">
           <router-link :to="'/restaurant/' + res.id" class="restaurant-card">
             <div class="image-box">
-              <img :src="res.image" alt="restaurant" />
+              <img :src="getImageUrl(res.image)" alt="restaurant" />
               <span class="promo-label">Promo</span>
             </div>
             <div class="info-box">

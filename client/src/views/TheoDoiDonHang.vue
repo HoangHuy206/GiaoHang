@@ -157,11 +157,14 @@ const openChatId = ref(null);
 let pollInterval = null;
 
 const getImageUrl = (url) => {
-    if (!url) return 'https://cdn-icons-png.flaticon.com/512/706/706164.png';
+    if (!url) return `${API_BASE_URL}/uploads/anhdaidienmacdinh.jpg`;
     if (url.startsWith('http')) {
         return url.replace('http://localhost:3000', API_BASE_URL);
     }
-    return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+    if (url.startsWith('/uploads/') || url.startsWith('uploads/')) {
+        return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+    }
+    return `${API_BASE_URL}/uploads/${url}`;
 };
 
 const goToProduct = (order) => {

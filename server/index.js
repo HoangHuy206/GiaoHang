@@ -4,62 +4,237 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const pool = require('./db');
+// Handle pool errors to prevent crash
+pool.on('error', (err) => {
+    console.error('Unexpected error on idle client', err);
+});
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const nodemailer = require('nodemailer');
 const compression = require('compression');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { MOCK_SHOPS, MOCK_PRODUCTS } = require('./mockData');
-const axios = require('axios'); // Added for n8n
+const axios = require('axios');
 const { saveOrderToExcel } = require('./utils/excelHelper');
 const { sendOrderToN8N } = require('./utils/n8nHelper');
+
+const app = express();
+const server = http.createServer(app);
+
+// Use compression to reduce file sizes sent over the network
+app.use(compression());
+app.use(cors());
+app.use(express.json());
+
+// Auto-create password_resets table
+pool.query(`
+    CREATE TABLE IF NOT EXISTS password_resets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        code VARCHAR(6) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        INDEX(email)
+    )
+`).catch(err => console.error("Error creating password_resets table:", err));
 
 // Helper to generate a unique simple Order Code (e.g., D001)
 function generateOrderCode(orderId) {
     return `D${String(orderId).padStart(3, '0')}`;
 }
 
-const app = express();
-
-// Initialize Gemini (Deprecated in favor of Groq)
-// let model = null; ...
-
-// Helper function for Groq AI
-async function callGroqAI(prompt) {
-    if (!process.env.GROQ_API_KEY) {
-        throw new Error("GROQ_API_KEY is missing");
-    }
-    try {
-        const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-            messages: [{ role: "user", content: prompt }],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.7
-        }, {
-            headers: {
-                'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        return response.data.choices[0].message.content;
-    } catch (error) {
-        console.error("Groq API Error:", error.response ? error.response.data : error.message);
-        throw error;
-    }
-}
-
-const server = http.createServer(app);
-
-// Use compression to reduce file sizes sent over the network
-app.use(compression());
-
 // --- Email Config ---
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: process.env.EMAIL_PORT || 587,
+    secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for other ports
     auth: {
         user: process.env.EMAIL_USER, 
         pass: process.env.EMAIL_PASS 
     }
+});
+
+// Function to send order confirmation email
+async function sendOrderConfirmationEmail(orderId, host) {
+    try {
+        // Fetch order details with user email and shop name
+        const [orders] = await pool.query(`
+            SELECT o.*, u.email as user_email, u.full_name as user_name, s.name as shop_name 
+            FROM orders o
+            JOIN users u ON o.user_id = u.id
+            JOIN shops s ON o.shop_id = s.id
+            WHERE o.id = ?
+        `, [orderId]);
+
+        if (orders.length === 0) return;
+        const order = orders[0];
+
+        // Fetch order items
+        const [items] = await pool.query(`
+            SELECT oi.*, p.name as product_name, p.image_url
+            FROM order_items oi
+            JOIN products p ON oi.product_id = p.id
+            WHERE oi.order_id = ?
+        `, [orderId]);
+
+        if (!order.user_email) {
+            console.log(`Order ${orderId}: No user email found, skipping confirmation email.`);
+            return;
+        }
+
+        const attachments = [];
+        const itemsHtml = items.map((item, index) => {
+            let imageFileName = 'anhdaidienmacdinh.jpg';
+            if (item.image_url) {
+                imageFileName = item.image_url.replace('/uploads/', '').replace('uploads/', '');
+            }
+            
+            const imagePath = path.join(__dirname, 'uploads', imageFileName);
+            const cid = `product_img_${index}`;
+            
+            // Check if file exists to attach
+            if (fs.existsSync(imagePath)) {
+                attachments.push({
+                    filename: imageFileName,
+                    path: imagePath,
+                    cid: cid
+                });
+            }
+            
+            const imgSrc = fs.existsSync(imagePath) ? `cid:${cid}` : 'https://via.placeholder.com/80';
+            
+            return `
+                <div style="display: flex; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+                    <img src="${imgSrc}" alt="${item.product_name}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; margin-right: 15px;">
+                    <div style="flex: 1;">
+                        <p style="margin: 0; font-weight: bold; color: #333; font-size: 16px;">${item.product_name}</p>
+                        <p style="margin: 5px 0 0 0; color: #666;">Số lượng: ${item.quantity}</p>
+                        <p style="margin: 5px 0 0 0; color: #e44d26; font-weight: bold; font-size: 15px;">${new Intl.NumberFormat('vi-VN').format(item.price)}đ</p>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const mailOptions = {
+            from: process.env.EMAIL_FROM || `"Giao Hàng Tận Nơi" <${process.env.EMAIL_USER}>`,
+            to: order.user_email,
+            subject: `Xác nhận đơn hàng #${orderId} - ${order.shop_name}`,
+            attachments: attachments,
+            html: `
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+                    <div style="background-color: #2e7d32; color: white; padding: 25px; text-align: center;">
+                        <h1 style="margin: 0; font-size: 24px;">Đơn hàng đã được xác nhận!</h1>
+                    </div>
+                    <div style="padding: 30px; background-color: #ffffff;">
+                        <p style="font-size: 16px; color: #333;">Chào <strong>${order.user_name}</strong>,</p>
+                        <p style="font-size: 15px; color: #555; line-height: 1.5;">Đơn hàng của bạn tại <strong>${order.shop_name}</strong> đã được shop xác nhận và đang chờ tài xế đến lấy.</p>
+                        
+                        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px; margin: 25px 0; border-left: 5px solid #2e7d32;">
+                            <p style="margin: 5px 0; font-size: 14px;"><strong>Mã đơn hàng:</strong> #${orderId}</p>
+                            <p style="margin: 5px 0; font-size: 14px;"><strong>Ngày đặt:</strong> ${new Date(order.created_at).toLocaleString('vi-VN')}</p>
+                            <p style="margin: 5px 0; font-size: 14px;"><strong>Địa chỉ giao:</strong> ${order.delivery_address}</p>
+                        </div>
+
+                        <h3 style="border-bottom: 2px solid #2e7d32; padding-bottom: 8px; color: #2e7d32; margin-top: 30px;">Chi tiết món ăn</h3>
+                        <div style="margin-top: 15px;">
+                            ${itemsHtml}
+                        </div>
+
+                        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px solid #eee;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; color: #555;">
+                                <span style="flex: 1;">Tạm tính:</span>
+                                <span style="width: 120px; text-align: right;">${new Intl.NumberFormat('vi-VN').format(order.items_price || 0)}đ</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; color: #555;">
+                                <span style="flex: 1;">Phí giao hàng:</span>
+                                <span style="width: 120px; text-align: right;">${new Intl.NumberFormat('vi-VN').format(order.delivery_fee || 0)}đ</span>
+                            </div>
+                            ${(order.discount || 0) > 0 ? `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; color: #d63031;">
+                                <span style="flex: 1;">Khuyến mãi vận chuyển:</span>
+                                <span style="width: 120px; text-align: right;">-${new Intl.NumberFormat('vi-VN').format(order.discount)}đ</span>
+                            </div>` : ''}
+                            <div style="display: flex; justify-content: space-between; margin-top: 15px; padding-top: 15px; border-top: 2px solid #eee;">
+                                <strong style="flex: 1; font-size: 18px; color: #333;">Tổng cộng:</strong>
+                                <strong style="width: 120px; text-align: right; font-size: 20px; color: #e44d26;">${new Intl.NumberFormat('vi-VN').format(order.total_price)}đ</strong>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 13px; color: #888; text-align: center;">
+                            <p>Cảm ơn bạn đã tin dùng <strong>Giao Hàng Tận Nơi</strong>!</p>
+                            <p>Mọi thắc mắc vui lòng liên hệ: <a href="mailto:hotro@giaohang.com" style="color: #2e7d32; text-decoration: none;">hotro@giaohang.com</a></p>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`✅ Confirmation email sent for Order #${orderId} to ${order.user_email}`);
+    } catch (error) {
+        console.error('❌ Lỗi gửi Email xác nhận:');
+        console.error('- Thông báo:', error.message);
+        console.error('- Mã lỗi:', error.code);
+        if (error.response) console.error('- Phản hồi từ SMTP:', error.response);
+    }
+}
+
+// --- FORGOT PASSWORD ROUTES ---
+app.post('/api/forgot-password', async (req, res) => {
+    const { email } = req.body;
+    try {
+        const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+        if (users.length === 0) return res.status(404).json({ error: 'Email không tồn tại trong hệ thống.' });
+
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+        await pool.query('DELETE FROM password_resets WHERE email = ?', [email]);
+        await pool.query('INSERT INTO password_resets (email, code, expires_at) VALUES (?, ?, ?)', [email, code, expiresAt]);
+
+        const mailOptions = {
+            from: '"hotro@giaohang.com" <hh9393100@gmail.com>',
+            to: email,
+            subject: 'Mã xác nhận thay đổi mật khẩu - Giao Hàng Tận Nơi',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #ddd; border-radius: 10px; padding: 25px;">
+                    <h2 style="color: #2e7d32; text-align: center;">Mã Xác Nhận Đổi Mật Khẩu</h2>
+                    <p>Chào bạn,</p>
+                    <p>Hệ thống nhận được yêu cầu thay đổi mật khẩu cho tài khoản liên kết với email này.</p>
+                    <div style="background-color: #f4f4f4; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
+                        <h1 style="letter-spacing: 10px; color: #333; margin: 0;">${code}</h1>
+                    </div>
+                    <p style="color: #666; font-size: 13px;">Mã này có hiệu lực trong <strong>5 phút</strong>. Vui lòng không cung cấp mã này cho bất kỳ ai khác.</p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                    <p style="text-align: center; font-size: 12px; color: #888;">Giao Hàng Tận Nơi - Dịch vụ giao hàng uy tín</p>
+                </div>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        res.json({ success: true, message: 'Mã xác thực đã được gửi về email của bạn.' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Lỗi hệ thống khi gửi email.' });
+    }
+});
+
+app.post('/api/verify-code', async (req, res) => {
+    const { email, code } = req.body;
+    try {
+        const [rows] = await pool.query('SELECT * FROM password_resets WHERE email = ? AND code = ? AND expires_at > NOW()', [email, code]);
+        if (rows.length > 0) res.json({ success: true });
+        else res.status(400).json({ error: 'Mã xác thực không đúng hoặc đã hết hạn.' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/reset-password', async (req, res) => {
+    const { email, code, newPassword } = req.body;
+    try {
+        const [rows] = await pool.query('SELECT * FROM password_resets WHERE email = ? AND code = ? AND expires_at > NOW()', [email, code]);
+        if (rows.length === 0) return res.status(400).json({ error: 'Yêu cầu không hợp lệ hoặc mã đã hết hạn.' });
+        await pool.query('UPDATE users SET password = ? WHERE email = ?', [newPassword, email]);
+        await pool.query('DELETE FROM password_resets WHERE email = ?', [email]);
+        res.json({ success: true, message: 'Mật khẩu đã được thay đổi thành công!' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 const io = new Server(server, {
@@ -68,6 +243,9 @@ const io = new Server(server, {
         methods: ["GET", "POST"]
     }
 });
+
+// Start the Telegram & Web payment reminder service
+const reminderService = require('./utils/paymentReminders')(io);
 
 const onlineDrivers = new Map();
 
@@ -81,9 +259,6 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 }
 
 function deg2rad(deg) { return deg * (Math.PI/180); }
-
-app.use(cors());
-app.use(express.json());
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -99,7 +274,6 @@ const upload = multer({ storage: storage });
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { maxAge: '1d', etag: true }));
 app.use(express.static(path.join(__dirname, '../client/dist'), { maxAge: '1h', etag: true }));
-app.get('/api/health', (req, res) => res.send('OK'));
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
@@ -122,1129 +296,654 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => onlineDrivers.delete(socket.id));
 });
 
-// --- AI Chat Route (Groq) ---
-app.post('/api/chat', async (req, res) => {
-    const { message, userId } = req.body;
-    let products = [];
-    try {
-        const [rows] = await pool.query('SELECT p.id, p.name, p.product_code, p.price, p.image_url, s.name as shop_name FROM products p JOIN shops s ON p.shop_id = s.id');
-        products = rows;
-        let orderContext = "User chưa đăng nhập hoặc không có đơn hàng gần đây.";
-        if (userId) {
-            const [orders] = await pool.query(`
-                SELECT o.id, o.status, o.total_price, o.delivery_address, 
-                       u_d.full_name as driver_name, u_c.full_name as customer_name, u_c.phone as customer_phone,
-                       (SELECT GROUP_CONCAT(CONCAT('[', p.product_code, '] ', p.name, ' (', oi.quantity, ')') SEPARATOR ', ') 
-                        FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id) as items
-                FROM orders o 
-                LEFT JOIN users u_d ON o.driver_id = u_d.id 
-                JOIN users u_c ON o.user_id = u_c.id
-                WHERE o.user_id = ? AND o.status != 'cancelled' 
-                ORDER BY o.created_at DESC LIMIT 3`, [userId]);
-            
-            // Format orders to include the professional Order Code
-            const formattedOrders = orders.map(o => ({
-                ...o,
-                orderCode: generateOrderCode(o.id)
-            }));
-            
-            if (formattedOrders.length > 0) orderContext = JSON.stringify(formattedOrders);
-        }
-        const currentTime = new Date().toLocaleString('vi-VN');
-        const productListForAI = products.map(p => ({ name: p.name, price: p.price, shop: p.shop_name }));
-        
-        let text = "";
-        const n8nUrl = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/chat-ai';
-        
-        try {
-            console.log(`Attempting n8n: ${n8nUrl}`);
-            const n8nResponse = await axios.post(n8nUrl, { 
-                chatInput: message, 
-                userId: userId || 'guest', 
-                context: { currentTime, menu: JSON.stringify(productListForAI), orderHistory: orderContext } 
-            }, { timeout: 60000 });
-
-            console.log("n8n Raw Response:", JSON.stringify(n8nResponse.data));
-
-            let responseData = n8nResponse.data;
-            
-            if (Array.isArray(responseData) && responseData.length > 0) {
-                responseData = responseData[0];
-            }
-
-            if (responseData && (responseData.output || responseData.text || responseData.message || responseData.content)) {
-                text = responseData.output || responseData.text || responseData.message || responseData.content;
-            } else if (typeof responseData === 'string') {
-                text = responseData;
-            } else {
-                text = JSON.stringify(responseData);
-            }
-        } catch (e) { 
-            console.log("n8n Error:", e.message);
-            text = "Hệ thống AI đang bận. Nếu cần hỗ trợ gấp, vui lòng liên hệ email: haiquan2482006@gmail.com";
-        }
-
-        if (typeof text === 'object') text = JSON.stringify(text);
-        
-        // Debug: Nếu text rỗng, báo rõ ràng để người dùng biết
-        if (!text || text.trim() === "" || text === "{}") {
-             text = "⚠️ n8n trả về kết quả rỗng. Vui lòng kiểm tra Node 'Respond to Webhook' trong n8n. Đảm bảo nó trả về JSON có trường 'output', 'text' hoặc 'message'.";
-        }
-        
-        const safeText = String(text || "");
-        const suggestedProducts = products.filter(p => safeText.toLowerCase().includes(p.name.toLowerCase()));
-        res.json({ reply: safeText, suggestedProducts });
-
-    } catch (err) {
-        console.error("AI Error:", err);
-        res.json({ reply: `Lỗi hệ thống: ${err.message}`, suggestedProducts: [] });
+// --- Helper to send Telegram Message ---
+async function sendTelegramMessage(chatId, text) {
+    if (!chatId || !process.env.TELEGRAM_BOT_TOKEN) {
+        console.warn("⚠️ Không thể gửi Telegram: ChatId hoặc TELEGRAM_BOT_TOKEN bị thiếu.");
+        return;
     }
-});
+    try {
+        await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            chat_id: chatId,
+            text: text
+        });
+        console.log(`✅ Đã gửi thông báo Telegram tới ChatId: ${chatId}`);
+    } catch (error) {
+        console.error("❌ Lỗi gửi Telegram:", error.response ? error.response.data : error.message);
+    }
+}
 
-// Route này dành cho SePay (khớp với URL SePay đang gọi: /sepay-hook)
-app.post('/sepay-hook', async (req, res) => {
-    handleWebhook(req, res);
-});
-
-app.post('/api/payment/webhook', async (req, res) => {
-    handleWebhook(req, res);
-});
-
+// --- WEBHOOK HANDLER ---
 async function handleWebhook(req, res) {
     let connection;
     try {
-        // SePay dùng 'transferAmount', các bên khác dùng 'amount'
         const { content, amount, transferAmount, description, orderCode } = req.body;
-        console.log("✅ [Webhook] Received Data:", req.body);
+        console.log("✅ [Webhook] Nhận dữ liệu từ Sepay:", req.body);
         
-        // Ưu tiên lấy transferAmount từ SePay nếu amount bị trống
         const finalAmount = amount || transferAmount || 0;
-        
         let detectedOrderCode = null;
-        const incomingContent = content || description || orderCode || "";
-        const match = incomingContent.match(/((?:D|DH)\s?\d+)/i);
+
+        const incomingContent = String(content || description || "");
+        const match = incomingContent.match(/((?:D|DH)\d+)/i) || incomingContent.match(/((?:D|DH)\s+\d+)/i);
+        
         if (match) {
             detectedOrderCode = match[1].replace(/\s/g, '').toUpperCase();
-        } else {
-            if (orderCode) detectedOrderCode = orderCode;
+        } else if (orderCode) {
+            detectedOrderCode = String(orderCode).toUpperCase();
         }
 
         if (!detectedOrderCode) {
-            console.error("❌ [Webhook] Failed: No order code found in content:", incomingContent);
-            return res.status(400).json({ success: false, message: "No order code found in content" });
+            console.error("❌ Webhook lỗi: Không tìm thấy mã đơn trong nội dung:", incomingContent);
+            return res.status(200).json({ success: false, message: "No order code found" });
         }
 
-        console.log(`✅ [Webhook] Identified Order: ${detectedOrderCode}, Amount: ${finalAmount}`);
-
-        // Trích xuất ID số từ mã DH (ví dụ DH123 -> 123) để update vào DB
         const orderIdNum = parseInt(detectedOrderCode.replace(/\D/g, ''));
+        const standardizedCode = `D${String(orderIdNum).padStart(3, '0')}`;
 
         connection = await pool.getConnection();
         await connection.beginTransaction();
 
-        // 4. Lưu lịch sử giao dịch (Sửa amount thành finalAmount)
+        // 1. Cập nhật giao dịch
         await connection.query(
             'INSERT INTO transactions (order_code, amount, content, gateway) VALUES (?, ?, ?, ?)',
-            [detectedOrderCode, finalAmount, incomingContent, 'sepay']
+            [standardizedCode, finalAmount, incomingContent, 'sepay']
         );
 
-        // 5. CẬP NHẬT TRẠNG THÁI ĐƠN HÀNG -> finding_driver
-        if (orderIdNum) {
-            await connection.query(
-                "UPDATE orders SET status = 'finding_driver' WHERE id = ?", 
-                [orderIdNum]
-            );
+        // 2. Cập nhật đơn hàng
+        await connection.query(
+            "UPDATE orders SET status = 'finding_driver', payment_status = 'paid', paid_at = NOW() WHERE id = ?", 
+            [orderIdNum]
+        );
 
-            // 6. BẮN SOCKET CHO FRONTEND
-            io.to(`order_${orderIdNum}`).emit('payment_success', { 
-                orderId: orderIdNum,
-                status: 'finding_driver',
-                message: 'Thanh toán thành công'
-            });
-            
-            io.to(`order_${orderIdNum}`).emit('status_update', { 
-                status: 'finding_driver', 
-                orderId: orderIdNum 
-            });
+        // Gửi email xác nhận ngay khi thanh toán thành công
+        sendOrderConfirmationEmail(orderIdNum, req.headers.host).catch(err => console.error("Email error after payment:", err));
 
-            console.log(`🚀 Đã cập nhật đơn #${orderIdNum} -> finding_driver và báo cho Client.`);
-            
-            // Fetch full order details for sync
-            try {
-                const [orderDetailRows] = await connection.query(`
-                    SELECT o.id, u.full_name, u.phone, s.name as shop_name, o.delivery_address, o.total_price, o.status
-                    FROM orders o
-                    JOIN users u ON o.user_id = u.id
-                    JOIN shops s ON o.shop_id = s.id
-                    WHERE o.id = ?`, [orderIdNum]);
+        // 3. Lấy thông tin chi tiết
+        const [fullOrderRows] = await connection.query(`
+            SELECT o.*, s.name as shop_name, s.address as shop_address, s.lat as shop_lat, s.lng as shop_lng, s.telegram_chat_id, u.full_name as customer_name, u.phone as customer_phone, u.email as user_email
+            FROM orders o
+            JOIN shops s ON o.shop_id = s.id
+            JOIN users u ON o.user_id = u.id
+            WHERE o.id = ?`, [orderIdNum]);
 
-                if (orderDetailRows.length > 0) {
-                    const od = orderDetailRows[0];
-                    const [itemRows] = await connection.query(`
-                        SELECT p.name, p.product_code, oi.quantity 
-                        FROM order_items oi 
-                        JOIN products p ON oi.product_id = p.id 
-                        WHERE oi.order_id = ?`, [orderIdNum]);
-                    
-                    const itemNames = itemRows.map(i => {
-                        const code = i.product_code ? `${i.product_code} - ` : '';
-                        return `${code}${i.name} (${i.quantity})`;
-                    }).join(', ');
-
-                    const orderPayload = {
-                        orderId: generateOrderCode(orderIdNum),
-                        customerName: od.full_name,
-                        phone: od.phone,
-                        address: od.delivery_address,
-                        shopName: od.shop_name,
-                        items: itemNames,
-                        totalPrice: od.total_price,
-                        status: 'finding_driver'
-                    };
-
-                    await saveOrderToExcel(orderPayload);
-                    await sendOrderToN8N(orderPayload);
-                }
-            } catch (syncErr) {
-                console.error("Webhook sync error:", syncErr);
-            }
+        if (fullOrderRows.length === 0) {
+            await connection.rollback();
+            return res.status(200).json({ success: false, message: "Order not found in DB" });
         }
 
+        const fullOrder = fullOrderRows[0];
+
+        // 4. Bắn Socket cho Khách hàng
+        io.to(`order_${orderIdNum}`).emit('payment_success', { 
+            orderId: orderIdNum,
+            status: 'finding_driver',
+            message: 'Thanh toán thành công'
+        });
+        
+        // 5. Nổ đơn cho Tài xế
+        const socketData = {
+            orderId: orderIdNum,
+            ma_don_hang: standardizedCode,
+            ten_khach_hang: fullOrder.customer_name,
+            ten_mon_an: "Đơn hàng mới từ QR",
+            tong_tien: new Intl.NumberFormat('vi-VN').format(finalAmount) + 'đ',
+            ten_quan: fullOrder.shop_name,
+            hinh_anh_quan: fullOrder.image_url,
+            lat_don: Number(fullOrder.shop_lat),
+            lng_don: Number(fullOrder.shop_lng),
+            dia_chi_giao: fullOrder.delivery_address,
+            lat_tra: Number(fullOrder.delivery_lat),
+            lng_tra: Number(fullOrder.delivery_lng)
+        };
+        io.emit('place_order', socketData);
+
         await connection.commit();
-        res.json({ success: true });
+        res.status(200).json({ success: true });
+        console.log(`🚀 Xử lý xong Webhook cho đơn #${orderIdNum}.`);
+
+        // 6. Xử lý tác vụ nền (Gửi Telegram + Sync Excel/n8n)
+        setTimeout(async () => {
+            try {
+                const [checkRows] = await pool.query(
+                    "SELECT status, customer_bank_code, customer_bank_account, customer_bank_name, total_price FROM orders WHERE id = ?", 
+                    [orderIdNum]
+                );
+                
+                if (checkRows.length > 0 && checkRows[0].status === 'finding_driver') {
+                    const orderInfo = checkRows[0];
+                    // CHỈ GỬI CHO SHOP (ChatId lưu trong bảng shops)
+                    if (fullOrder.telegram_chat_id) {
+                        let msg = `⚠️ HOÀN TIỀN: Đơn ${standardizedCode} của Shop ${fullOrder.shop_name} chưa có tài xế sau 2p.\n`;
+                        msg += `💰 Số tiền cần hoàn: ${finalAmount.toLocaleString()}đ\n`;
+
+                        if (orderInfo.customer_bank_code && orderInfo.customer_bank_account) {
+                            const qrUrl = `https://img.vietqr.io/image/${orderInfo.customer_bank_code}-${orderInfo.customer_bank_account}-compact.png?amount=${finalAmount}&addInfo=Hoan tien don ${standardizedCode}&accountName=${encodeURIComponent(orderInfo.customer_bank_name || '')}`;
+                            msg += `\n🏦 QR HOÀN TIỀN CỦA KHÁCH:\n${qrUrl}\n\n(Shop quét mã trên để hoàn tiền nhanh cho khách)`;
+                        } else {
+                            msg += `\n❌ Khách hàng không cung cấp thông tin ngân hàng.`;
+                        }
+
+                        await sendTelegramMessage(fullOrder.telegram_chat_id, msg);
+                    }
+                }
+            } catch (e) { console.error("Timer error:", e); }
+        }, 120000);
+
+        // Background Sync
+        (async () => {
+            try {
+                const [itemRows] = await pool.query(`
+                    SELECT p.name, p.product_code, oi.quantity 
+                    FROM order_items oi 
+                    JOIN products p ON oi.product_id = p.id 
+                    WHERE oi.order_id = ?`, [orderIdNum]);
+                
+                const itemNames = itemRows.map(i => `${i.product_code || ''} ${i.name} (${i.quantity})`).join(', ');
+
+                const payload = {
+                    orderId: standardizedCode,
+                    customerName: fullOrder.customer_name,
+                    phone: fullOrder.customer_phone,
+                    address: fullOrder.delivery_address,
+                    shopName: fullOrder.shop_name,
+                    items: itemNames,
+                    totalPrice: finalAmount,
+                    status: 'finding_driver'
+                };
+
+                await saveOrderToExcel(payload);
+                sendOrderToN8N(payload).catch(() => {});
+            } catch (syncErr) { console.error("Sync error:", syncErr); }
+        })();
 
     } catch (err) {
         if (connection) await connection.rollback();
         console.error("❌ Webhook Error:", err);
-        res.status(500).json({ success: false, error: err.message });
+        res.status(200).json({ success: false, error: "Internal Error" });
     } finally {
         if (connection) connection.release();
     }
 }
 
-// 2. Client polling check trạng thái
+// Routes
+app.post('/sepay-hook', handleWebhook);
+app.post('/api/payment/webhook', handleWebhook);
+
 app.get('/api/payment/check/:code', async (req, res) => {
     const { code } = req.params;
     try {
-        const [rows] = await pool.query('SELECT * FROM transactions WHERE order_code = ? LIMIT 1', [code]);
-        if (rows.length > 0) {
-            return res.json({ paid: true, data: rows[0] });
+        const [transRows] = await pool.query('SELECT * FROM transactions WHERE order_code = ? LIMIT 1', [code]);
+        if (transRows.length > 0) return res.json({ paid: true });
+        
+        const orderIdNum = parseInt(code.replace(/\D/g, ''));
+        if (!isNaN(orderIdNum)) {
+            const [orderRows] = await pool.query('SELECT payment_status FROM orders WHERE id = ?', [orderIdNum]);
+            if (orderRows.length > 0 && orderRows[0].payment_status === 'paid') return res.json({ paid: true });
         }
-        return res.json({ paid: false });
-    } catch (err) {
-        console.error("Check Payment Error:", err);
-        return res.json({ paid: false });
-    }
+        res.json({ paid: false });
+    } catch (err) { res.json({ paid: false }); }
 });
 
-app.post('/api/payment/register', (req, res) => {
-    // Với webhook thật, ta không cần đăng ký trước vào Map bộ nhớ, 
-    // nhưng giữ lại endpoint này để client không bị lỗi 404 nếu vẫn gọi.
-    res.json({ success: true });
-});
-
-// --- API Routes ---
-
-// Auth
-app.post('/api/auth/register', async (req, res) => {
-    const { username, password, role, fullName, address, email, phone, cccd, gender, vehicle } = req.body;
-    try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        const [result] = await pool.query(
-            'INSERT INTO users (username, password, role, full_name, address, email, phone, cccd, gender, vehicle) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [username, password, role, fullName, address, email, phone, cccd, gender, vehicle]
-        );
-        res.json({ success: true, id: result.insertId, role });
-    } catch (err) {
-        // Fallback Mock Register (Simulated)
-        console.error("DB Error Register, using mock:", err.message);
-        res.json({ success: true, id: 999, role });
-    }
-});
-
+// --- AUTH & OTHER ROUTES ---
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
     try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
         const [rows] = await pool.query('SELECT * FROM users WHERE username = ? AND password = ?', [username, password]);
         if (rows.length > 0) {
             const user = rows[0];
-            res.json({ success: true, user: { 
-                id: user.id, 
-                username: user.username, 
-                role: user.role, 
-                full_name: user.full_name, 
-                address: user.address,
-                email: user.email,
-                avatar_url: user.avatar_url,
-                phone: user.phone,
-                cccd: user.cccd,
-                gender: user.gender,
-                vehicle: user.vehicle
-            }});
-        } else {
-            res.status(401).json({ error: 'Invalid credentials' });
-        }
+            res.json({ success: true, user: { id: user.id, username: user.username, role: user.role, full_name: user.full_name, address: user.address, phone: user.phone, avatar_url: user.avatar_url, email: user.email, telegram_chat_id: user.telegram_chat_id } });
+        } else res.status(401).json({ error: 'Invalid credentials' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- PRODUCT ROUTES ---
+app.post('/api/products', upload.single('image'), async (req, res) => {
+    const { shopId, name, price, productCode } = req.body;
+    const image_url = req.file ? `/uploads/${req.file.filename}` : '/uploads/anhdaidienmacdinh.jpg';
+
+    try {
+        const [result] = await pool.query(
+            'INSERT INTO products (shop_id, name, price, product_code, image_url) VALUES (?, ?, ?, ?, ?)',
+            [shopId, name, price, productCode, image_url]
+        );
+        res.json({ success: true, productId: result.insertId });
     } catch (err) {
-        // Fallback Mock Login
-        console.error("DB Error Login, using mock:", err.message);
-        if (username === 'admin' && password === '123456') {
-            res.json({ success: true, user: { id: 1, username: 'admin', role: 'user', full_name: 'Người dùng Mẫu', email: 'test@gmail.com' } });
-        } else if (username === 'driver' && password === '123456') {
-             res.json({ success: true, user: { id: 2, username: 'driver', role: 'driver', full_name: 'Tài xế Mẫu', email: 'driver@gmail.com' } });
-        } else {
-             // Allow any login in fallback mode for testing
-             res.json({ success: true, user: { id: 999, username: username, role: 'user', full_name: 'Khách hàng', email: 'guest@gmail.com' } });
-        }
+        console.error(err);
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 
-// Update Profile (Avatar + Info)
-app.put('/api/users/:id', upload.single('avatar'), async (req, res) => {
-    const userId = req.params.id;
-    const { full_name, address, email, phone } = req.body;
-    const file = req.file;
+app.delete('/api/products/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM products WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.put('/api/products/:id', upload.single('image'), async (req, res) => {
+    const { name, price, productCode } = req.body;
+    let query = 'UPDATE products SET name = ?, price = ?, product_code = ?';
+    let params = [name, price, productCode];
+
+    if (req.file) {
+        query += ', image_url = ?';
+        params.push(`/uploads/${req.file.filename}`);
+    }
+
+    query += ' WHERE id = ?';
+    params.push(req.params.id);
 
     try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        let query = 'UPDATE users SET full_name = ?, address = ?, email = ?, phone = ?';
-        let params = [full_name, address, email, phone];
-
-        if (file) {
-            const avatarUrl = `/uploads/${file.filename}`;
-            query += ', avatar_url = ?';
-            params.push(avatarUrl);
-        }
-
-        query += ' WHERE id = ?';
-        params.push(userId);
-
         await pool.query(query, params);
-
-        // Return updated user info
-        const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [userId]);
-        const user = rows[0];
-
-        res.json({ 
-            success: true, 
-            user: { 
-                id: user.id, 
-                username: user.username, 
-                role: user.role, 
-                full_name: user.full_name, 
-                address: user.address, 
-                email: user.email, 
-                phone: user.phone,
-                avatar_url: user.avatar_url 
-            } 
-        });
-
+        res.json({ success: true });
     } catch (err) {
-        console.error("DB Error Profile Update, using mock:", err.message);
-        res.json({ 
-            success: true, 
-            user: { 
-                id: userId, 
-                username: 'mockUser', 
-                role: 'user', 
-                full_name: full_name, 
-                address: address,
-                email: email,
-                avatar_url: file ? `/uploads/${file.filename}` : null 
-            } 
-        });
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 
-// Get All Products (for AI or Search)
-app.get('/api/products', async (req, res) => {
+// --- TEST & SIMULATION ROUTES ---
+app.post('/api/test/simulate-refund', async (req, res) => {
+    const { orderId, amount, customerName, bankCode, bankAccount } = req.body;
+    const orderCode = `D${String(orderId).padStart(3, '0')}`;
+    
     try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        const [rows] = await pool.query('SELECT p.*, s.name as shop_name FROM products p JOIN shops s ON p.shop_id = s.id');
-        res.json(rows);
+        // Gửi thông báo Telegram giả lập hoàn tiền
+        const [shopRows] = await pool.query('SELECT telegram_chat_id, name FROM shops WHERE id = (SELECT shop_id FROM orders WHERE id = ?)', [orderId]);
+        
+        if (shopRows.length > 0 && shopRows[0].telegram_chat_id) {
+            let msg = `🧪 [TEST MODE] Yêu cầu hoàn tiền đơn ${orderCode}\n`;
+            msg += `💰 Số tiền: ${Number(amount).toLocaleString()}đ\n`;
+            msg += `👤 Khách hàng: ${customerName}\n`;
+            
+            if (bankCode && bankAccount) {
+                msg += `🏦 Ngân hàng: ${bankCode} - ${bankAccount}\n`;
+            }
+
+            await sendTelegramMessage(shopRows[0].telegram_chat_id, msg);
+            res.json({ success: true, message: "Đã gửi yêu cầu hoàn tiền giả lập tới Telegram của Shop." });
+        } else {
+            res.json({ success: false, message: "Shop chưa cấu hình Telegram Chat ID." });
+        }
     } catch (err) {
-        console.error("DB Error /api/products, using mock:", err.message);
-        res.json(MOCK_PRODUCTS);
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 
-// Shops & Products
+app.get('/api/users/:id', async (req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT id, username, role, full_name, address, phone, avatar_url, email, telegram_chat_id FROM users WHERE id = ?', [req.params.id]);
+        if (rows.length > 0) res.json(rows[0]);
+        else res.status(404).json({ error: 'User not found' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/users/:id', upload.single('avatar'), async (req, res) => {
+    const { full_name, address, phone, email } = req.body;
+    const avatar_url = req.file ? `/uploads/${req.file.filename}` : null;
+    
+    try {
+        let query = 'UPDATE users SET full_name = ?, address = ?, phone = ?, email = ?';
+        let params = [full_name, address, phone, email];
+        
+        if (avatar_url) {
+            query += ', avatar_url = ?';
+            params.push(avatar_url);
+        }
+        
+        query += ' WHERE id = ?';
+        params.push(req.params.id);
+        
+        await pool.query(query, params);
+        
+        // Return updated user info
+        const [updated] = await pool.query('SELECT id, username, role, full_name, address, phone, avatar_url, email, telegram_chat_id FROM users WHERE id = ?', [req.params.id]);
+        res.json({ success: true, user: updated[0] });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 app.get('/api/shops', async (req, res) => {
     try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        const [rows] = await pool.query('SELECT * FROM shops');
+        const [rows] = await pool.query('SELECT * FROM shops ORDER BY id DESC');
+        res.json(rows);
+    } catch (err) { res.json([]); }
+});
+
+app.get('/api/products', async (req, res) => {
+    try {
+        const [rows] = await pool.query(`
+            SELECT p.*, s.name as shop_name 
+            FROM products p 
+            JOIN shops s ON p.shop_id = s.id 
+            ORDER BY p.id DESC
+        `);
         res.json(rows);
     } catch (err) {
-        console.error("DB Error /api/shops, using mock:", err.message);
-        res.json(MOCK_SHOPS);
+        console.error("Lỗi lấy sản phẩm:", err);
+        res.json([]);
     }
 });
 
 app.get('/api/shops/:id', async (req, res) => {
     try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
         const [shop] = await pool.query('SELECT * FROM shops WHERE id = ?', [req.params.id]);
-        const [products] = await pool.query('SELECT id, shop_id, name, product_code, price, image_url FROM products WHERE shop_id = ?', [req.params.id]);
-        if (shop.length === 0) return res.status(404).json({ error: 'Shop not found' });
+        const [products] = await pool.query('SELECT * FROM products WHERE shop_id = ?', [req.params.id]);
         res.json({ ...shop[0], products });
+    } catch (err) { res.status(404).json({ error: 'Not found' }); }
+});
+
+app.put('/api/shops/:id', async (req, res) => {
+    const { name, address, bank_code, bank_account, telegram_chat_id } = req.body;
+    try {
+        await pool.query(
+            'UPDATE shops SET name = ?, address = ?, bank_code = ?, bank_account = ?, telegram_chat_id = ? WHERE id = ?',
+            [name, address, bank_code, bank_account, telegram_chat_id, req.params.id]
+        );
+        res.json({ success: true });
     } catch (err) {
-        console.error("DB Error /api/shops/:id, using mock:", err.message);
-        const shop = MOCK_SHOPS.find(s => s.id == req.params.id);
-        if (shop) {
-             const prods = MOCK_PRODUCTS.filter(p => p.shop_id == req.params.id);
-             res.json({ ...shop, products: prods });
-        } else {
-             res.status(404).json({ error: 'Shop not found (Mock)' });
-        }
+        console.error(err);
+        res.status(500).json({ error: err.message });
     }
 });
 
-app.get('/api/shops/:id/stats', async (req, res) => {
+// --- ADMIN ROUTES ---
+app.get('/api/admin/shops', async (req, res) => {
+    const { userId } = req.query;
+    try {
+        // Verify if user is truly the admin with the specific Telegram ID
+        const [userCheck] = await pool.query('SELECT role, telegram_chat_id FROM users WHERE id = ?', [userId]);
+        if (userCheck.length === 0 || userCheck[0].role !== 'admin' || userCheck[0].telegram_chat_id !== '5807941249') {
+            return res.status(403).json({ error: 'Truy cập bị từ chối. Chỉ Admin với ID 5807941249 mới có quyền này.' });
+        }
+
+        const [rows] = await pool.query(`
+            SELECT s.*, u.username as owner_username, u.full_name as owner_name, u.phone as owner_phone, u.email as owner_email, u.created_at as registration_date
+            FROM shops s
+            LEFT JOIN users u ON s.user_id = u.id
+            ORDER BY s.id DESC
+        `);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/admin/shops/:id', async (req, res) => {
+    const { userId: adminUserId } = req.body;
     const shopId = req.params.id;
-    const date = req.query.date; // Expect YYYY-MM-DD format
 
     try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        let dateFilter = '';
-        const params = [shopId];
-
-        if (date) {
-            dateFilter = ' AND DATE(o.created_at) = ?';
-            params.push(date);
+        // Verify admin
+        const [userCheck] = await pool.query('SELECT role, telegram_chat_id FROM users WHERE id = ?', [adminUserId]);
+        if (userCheck.length === 0 || userCheck[0].role !== 'admin' || userCheck[0].telegram_chat_id !== '5807941249') {
+            return res.status(403).json({ error: 'Chỉ Admin chính chủ mới có thể xóa Shop.' });
         }
+    } catch (e) { return res.status(500).json({ error: e.message }); }
 
-        // 1. Top Selling Products
-        const [topProducts] = await pool.query(`
-            SELECT p.name, SUM(oi.quantity) as sold 
-            FROM order_items oi 
-            JOIN products p ON oi.product_id = p.id 
-            JOIN orders o ON oi.order_id = o.id 
-            WHERE o.shop_id = ? ${dateFilter}
-            GROUP BY p.name 
-            ORDER BY sold DESC 
-            LIMIT 5
-        `, params);
-
-        // 2. Peak Purchase Times (by Hour)
-        const [peakTimes] = await pool.query(`
-            SELECT HOUR(created_at) as order_hour, COUNT(*) as count 
-            FROM orders 
-            WHERE shop_id = ? ${dateFilter.replace('o.', '')}
-            GROUP BY order_hour 
-            ORDER BY order_hour
-        `, params);
-
-        res.json({ topProducts, peakTimes });
-    } catch (err) {
-        // Mock Stats
-        res.json({ 
-            topProducts: [{ name: "Mock Product 1", sold: 50 }, { name: "Mock Product 2", sold: 30 }], 
-            peakTimes: [{ order_hour: 12, count: 20 }, { order_hour: 19, count: 15 }] 
-        });
-    }
-});
-
-// Orders
-app.post('/api/orders', async (req, res) => {
-    const { userId, shopId, items, totalPrice, deliveryAddress, deliveryLat, deliveryLng } = req.body;
-    // items: [{ productId, quantity, price }]
     const connection = await pool.getConnection();
     try {
-        await connection.query(`USE ${process.env.DB_NAME}`);
         await connection.beginTransaction();
 
-        const [orderResult] = await connection.query(
-            'INSERT INTO orders (user_id, shop_id, status, total_price, delivery_address, delivery_lat, delivery_lng) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [userId, shopId, 'pending', totalPrice, deliveryAddress, deliveryLat, deliveryLng]
-        );
-        const orderId = orderResult.insertId;
+        // 0. Get Owner User ID
+        const [shopInfo] = await connection.query('SELECT user_id FROM shops WHERE id = ?', [shopId]);
+        const ownerId = shopInfo.length > 0 ? shopInfo[0].user_id : null;
 
-        for (const item of items) {
-            await connection.query(
-                'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)',
-                [orderId, item.productId, item.quantity, item.price]
-            );
+        // 1. Delete reviews
+        await connection.query('DELETE FROM reviews WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ?)', [shopId]);
+
+        // 2. Delete order items
+        await connection.query(`
+            DELETE oi FROM order_items oi
+            JOIN orders o ON oi.order_id = o.id
+            WHERE o.shop_id = ?
+        `, [shopId]);
+
+        // 3. Delete orders
+        await connection.query('DELETE FROM orders WHERE shop_id = ?', [shopId]);
+
+        // 4. Delete favorites
+        await connection.query('DELETE FROM favorites WHERE shop_id = ?', [shopId]);
+
+        // 5. Delete products
+        await connection.query('DELETE FROM products WHERE shop_id = ?', [shopId]);
+
+        // 6. Delete the shop
+        await connection.query('DELETE FROM shops WHERE id = ?', [shopId]);
+
+        // 7. Finally, delete the owner user
+        if (ownerId) {
+            await connection.query('DELETE FROM users WHERE id = ?', [ownerId]);
         }
 
         await connection.commit();
-        
-        // Save to Excel for AI Support
-        try {
-            const [orderDetailRows] = await pool.query(`
-                SELECT o.id, u.full_name, u.phone, s.name as shop_name, o.delivery_address, o.total_price, o.status
-                FROM orders o
-                JOIN users u ON o.user_id = u.id
-                JOIN shops s ON o.shop_id = s.id
-                WHERE o.id = ?`, [orderId]);
-
-            if (orderDetailRows.length > 0) {
-                const od = orderDetailRows[0];
-                const [itemRows] = await pool.query(`
-                    SELECT p.name, p.product_code, oi.quantity 
-                    FROM order_items oi 
-                    JOIN products p ON oi.product_id = p.id 
-                    WHERE oi.order_id = ?`, [orderId]);
-                
-                const itemNames = itemRows.map(i => {
-                    const code = i.product_code ? `${i.product_code} - ` : '';
-                    return `${code}${i.name} (${i.quantity})`;
-                }).join(', ');
-
-                const orderPayload = {
-                    orderId: generateOrderCode(orderId),
-                    customerName: od.full_name,
-                    phone: od.phone,
-                    address: od.delivery_address,
-                    shopName: od.shop_name,
-                    items: itemNames,
-                    totalPrice: od.total_price,
-                    status: od.status
-                };
-
-                await saveOrderToExcel(orderPayload);
-                await sendOrderToN8N(orderPayload);
-            }
-        } catch (excelErr) {
-            console.error("Failed to save to Excel:", excelErr);
-        }
-
-        // Notify Shop
-        // We assume shop admin userId is linked to shopId. simpler: emit to room 'shop_{shopId}'
-        const finalOrderCode = generateOrderCode(orderId);
-        io.to(`shop_${shopId}`).emit('new_order', { orderId, orderCode: finalOrderCode, totalPrice, items });
-        
-        res.json({ success: true, orderId, orderCode: finalOrderCode });
+        res.json({ success: true, message: 'Shop và Tài khoản chủ quán đã được xóa sạch.' });
     } catch (err) {
         if (connection) await connection.rollback();
-        console.error("DB Error Place Order:", err.message);
-        res.status(500).json({ success: false, message: "Lỗi hệ thống khi đặt hàng. Vui lòng thử lại." });
+        console.error(err);
+        res.status(500).json({ error: err.message });
     } finally {
         if (connection) connection.release();
     }
 });
 
-// Get Orders (Role based)
+app.post('/api/orders', async (req, res) => {
+    const { userId, shopId, items, totalPrice, itemsPrice, deliveryFee, discount, deliveryAddress, deliveryLat, deliveryLng, customerBankCode, customerBankAccount, customerBankName } = req.body;
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const [result] = await connection.query(
+            'INSERT INTO orders (user_id, shop_id, status, total_price, items_price, delivery_fee, discount, delivery_address, delivery_lat, delivery_lng, customer_bank_code, customer_bank_account, customer_bank_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [userId, shopId, 'pending', totalPrice, itemsPrice || 0, deliveryFee || 0, discount || 0, deliveryAddress, deliveryLat, deliveryLng, customerBankCode, customerBankAccount, customerBankName]
+        );
+        const orderId = result.insertId;
+        for (const item of items) {
+            await connection.query('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)', [orderId, item.productId, item.quantity, item.price]);
+        }
+        await connection.commit();
+        res.json({ success: true, orderId, orderCode: generateOrderCode(orderId) });
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error(err);
+        res.status(500).json({ success: false, message: err.message });
+    } finally { if (connection) connection.release(); }
+});
+
 app.get('/api/orders', async (req, res) => {
     const { role, userId, shopId } = req.query;
     try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
         let query = '';
         let params = [];
-
         if (role === 'user') {
             query = `
-                SELECT o.*, s.name as shop_name, u.full_name as driver_name, u.phone as driver_phone,
-                       (SELECT p.image_url FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_image,
-                       (SELECT p.id FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_id,
-                       (SELECT COUNT(*) FROM reviews r WHERE r.order_id = o.id AND r.user_id = ?) > 0 as is_completed_by_user,
-                       (SELECT GROUP_CONCAT(CONCAT('[', p.product_code, '] ', p.name, ' (', oi.quantity, ')') SEPARATOR ', ') 
-                        FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id) as item_details
-                FROM orders o
-                JOIN shops s ON o.shop_id = s.id
-                LEFT JOIN users u ON o.driver_id = u.id
-                WHERE o.user_id = ?
+                SELECT o.*, s.name as shop_name, 
+                (SELECT p.image_url FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_image,
+                (SELECT p.id FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_id,
+                (SELECT GROUP_CONCAT(CONCAT(p.name, ' x', oi.quantity) SEPARATOR ', ') FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id) as item_details,
+                u_driver.full_name as driver_name, u_driver.phone as driver_phone
+                FROM orders o 
+                JOIN shops s ON o.shop_id = s.id 
+                LEFT JOIN users u_driver ON o.driver_id = u_driver.id
+                WHERE o.user_id = ? 
                 ORDER BY o.created_at DESC`;
-            params = [userId, userId];
+            params = [userId];
         } else if (role === 'driver') {
             query = `
-                SELECT o.*, s.name as shop_name, s.address as shop_address, u.full_name as user_name
-                FROM orders o
-                JOIN shops s ON o.shop_id = s.id
-                JOIN users u ON o.user_id = u.id
-                WHERE o.driver_id = ? OR o.status = 'finding_driver'
+                SELECT o.*, s.name as shop_name, s.address as shop_address, s.lat as shop_lat, s.lng as shop_lng,
+                (SELECT p.image_url FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_image,
+                (SELECT GROUP_CONCAT(CONCAT(p.name, ' x', oi.quantity) SEPARATOR ', ') FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id) as item_details,
+                u_cust.full_name as customer_name, u_cust.phone as customer_phone
+                FROM orders o 
+                JOIN shops s ON o.shop_id = s.id 
+                JOIN users u_cust ON o.user_id = u_cust.id
+                WHERE o.driver_id = ? OR o.status = 'finding_driver' 
                 ORDER BY o.created_at DESC`;
             params = [userId];
         } else if (role === 'shop') {
             query = `
-                SELECT o.*, u.full_name as user_name, d.full_name as driver_name,
-                       (SELECT p.image_url FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_image
-                FROM orders o
-                JOIN users u ON o.user_id = u.id
-                LEFT JOIN users d ON o.driver_id = d.id
-                WHERE o.shop_id = ?
+                SELECT o.*, u.full_name as user_name,
+                (SELECT p.image_url FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id LIMIT 1) as first_product_image,
+                (SELECT GROUP_CONCAT(CONCAT(p.name, ' x', oi.quantity) SEPARATOR ', ') FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = o.id) as item_details
+                FROM orders o 
+                JOIN users u ON o.user_id = u.id 
+                WHERE o.shop_id = ? 
                 ORDER BY o.created_at DESC`;
             params = [shopId];
-        } else {
-            return res.status(400).json({ error: 'Invalid role' });
         }
-
         const [rows] = await pool.query(query, params);
-        
-        // Add formatted orderCode to each row
-        const formattedRows = rows.map(row => ({
-            ...row,
-            order_code: generateOrderCode(row.id)
-        }));
-        
-        res.json(formattedRows);
-    } catch (err) {
-        console.error("DB Error Get Orders, using mock:", err.message);
-        res.json([]); // Return empty list for now
+        res.json(rows.map(r => ({ ...r, order_code: generateOrderCode(r.id) })));
+    } catch (err) { 
+        console.error(err);
+        res.json([]); 
     }
 });
 
-// Get Messages for an order
-app.get('/api/orders/:id/messages', async (req, res) => {
-    const orderId = req.params.id;
+// --- FAVORITES ROUTES ---
+app.get('/api/like/:userId', async (req, res) => {
     try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        const [messages] = await pool.query(
-            'SELECT m.*, u.full_name, u.role FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.order_id = ? ORDER BY m.created_at ASC',
-            [orderId]
-        );
-        res.json(messages);
+        const [rows] = await pool.query('SELECT shop_id FROM favorites WHERE user_id = ?', [req.params.userId]);
+        res.json(rows);
     } catch (err) {
-        res.json([]);
+        console.error(err);
+        res.status(500).json([]);
     }
 });
 
-// Update Order Status
+app.post('/api/like', async (req, res) => {
+    const { userId, shopId } = req.body;
+    try {
+        await pool.query('INSERT IGNORE INTO favorites (user_id, shop_id) VALUES (?, ?)', [userId, shopId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.delete('/api/like/:userId/:shopId', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM favorites WHERE user_id = ? AND shop_id = ?', [req.params.userId, req.params.shopId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false });
+    }
+});
+
 app.put('/api/orders/:id/status', async (req, res) => {
     const { status, driverId } = req.body;
-    const orderId = req.params.id;
-    console.log(`Cập nhật trạng thái đơn #${orderId}: ${status} (Driver: ${driverId})`);
     try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
         let query = 'UPDATE orders SET status = ?';
         let params = [status];
-
-        if (driverId) {
-            query += ', driver_id = ?';
-            params.push(driverId);
-        }
-        
-        query += ' WHERE id = ?';
-        params.push(orderId);
-
+        if (driverId) { query += ', driver_id = ?'; params.push(driverId); }
+        query += ' WHERE id = ?'; params.push(req.params.id);
         await pool.query(query, params);
+        
+        io.emit('status_update', { status, orderId: req.params.id });
 
-        // Fetch full order details to ensure Excel and n8n have complete data for updating
-        try {
-            const [orderDetailRows] = await pool.query(`
-                SELECT o.id, u.full_name, u.phone, s.name as shop_name, o.delivery_address, o.total_price, o.status
+        // If status is 'finding_driver', send confirmation email AND notify all drivers
+        if (status === 'finding_driver') {
+            sendOrderConfirmationEmail(req.params.id, req.headers.host).catch(err => console.error("Email error:", err));
+            
+            // Fetch order details to notify drivers
+            const [fullOrderRows] = await pool.query(`
+                SELECT o.*, s.name as shop_name, s.address as shop_address, s.lat as shop_lat, s.lng as shop_lng, s.image_url as shop_image, u.full_name as customer_name
                 FROM orders o
-                JOIN users u ON o.user_id = u.id
                 JOIN shops s ON o.shop_id = s.id
-                WHERE o.id = ?`, [orderId]);
+                JOIN users u ON o.user_id = u.id
+                WHERE o.id = ?`, [req.params.id]);
 
-            if (orderDetailRows.length > 0) {
-                const od = orderDetailRows[0];
+            if (fullOrderRows.length > 0) {
+                const fullOrder = fullOrderRows[0];
+                const standardizedCode = `D${String(req.params.id).padStart(3, '0')}`;
+                
+                // Get item details for notification
                 const [itemRows] = await pool.query(`
-                    SELECT p.name, p.product_code, oi.quantity 
+                    SELECT p.name, oi.quantity 
                     FROM order_items oi 
                     JOIN products p ON oi.product_id = p.id 
-                    WHERE oi.order_id = ?`, [orderId]);
+                    WHERE oi.order_id = ?`, [req.params.id]);
                 
-                const itemNames = itemRows.map(i => {
-                    const code = i.product_code ? `${i.product_code} - ` : '';
-                    return `${code}${i.name} (${i.quantity})`;
-                }).join(', ');
+                const itemDetails = itemRows.map(i => `${i.name} (${i.quantity})`).join(', ');
 
-                const orderPayload = {
-                    orderId: generateOrderCode(orderId),
-                    customerName: od.full_name,
-                    phone: od.phone,
-                    address: od.delivery_address,
-                    shopName: od.shop_name,
-                    items: itemNames,
-                    totalPrice: od.total_price,
-                    status: od.status // This is the new status
-                };
-
-                await saveOrderToExcel(orderPayload);
-                await sendOrderToN8N(orderPayload);
-            }
-        } catch (syncErr) {
-            console.error("Sync error:", syncErr);
-        }
-
-        // Notify relevant parties
-        const [orderRows] = await pool.query(`
-            SELECT o.*, u.email as user_email, u.full_name as user_name 
-            FROM orders o 
-            JOIN users u ON o.user_id = u.id 
-            WHERE o.id = ?`, [orderId]);
-
-        if (orderRows.length > 0) {
-            const o = orderRows[0];
-            // Phát cho cả đơn hàng và toàn bộ hệ thống để tài xế nhận được tự động
-            io.to(`order_${orderId}`).emit('status_update', { status, orderId });
-            io.emit('status_update', { status, orderId }); 
-            
-            if (status === 'finding_driver') {
-                io.emit('driver_notification', { message: 'New order available!', orderId }); // Broadcast to all drivers
-
-                // --- BROADCAST ORDER TO NEARBY DRIVERS ---
-                const [fullOrder] = await pool.query(`
-                    SELECT o.*, s.name as ten_quan, s.lat as lat_don, s.lng as lng_don, s.image_url as hinh_anh_quan,
-                           u.full_name as ten_khach_hang
-                    FROM orders o 
-                    JOIN shops s ON o.shop_id = s.id 
-                    JOIN users u ON o.user_id = u.id
-                    WHERE o.id = ?`, [orderId]);
-
-                if (fullOrder.length > 0) {
-                    const orderData = fullOrder[0];
-                    // Fetch items for the popup
-                    const [items] = await pool.query('SELECT p.name, oi.quantity FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?', [orderId]);
-                    const itemNames = items.map(i => `${i.name} (${i.quantity})`).join(', ');
-
-                    const socketData = {
-                        orderId: orderId,
-                        ma_don_hang: 'DH' + orderId,
-                        ten_khach_hang: orderData.ten_khach_hang,
-                        ten_mon_an: itemNames,
-                        tong_tien: new Intl.NumberFormat('vi-VN').format(orderData.total_price) + 'đ',
-                        ten_quan: orderData.ten_quan,
-                        hinh_anh_quan: orderData.hinh_anh_quan,
-                        lat_don: Number(orderData.lat_don),
-                        lng_don: Number(orderData.lng_don),
-                        dia_chi_giao: orderData.delivery_address,
-                        lat_tra: Number(orderData.delivery_lat),
-                        lng_tra: Number(orderData.delivery_lng)
-                    };
-
-                    console.log(`Đang quét ${onlineDrivers.size} tài xế đang trực tuyến...`);
-                    
-                    let notifiedCount = 0;
-                    onlineDrivers.forEach((driver, sid) => {
-                        // Gửi đơn cho tất cả tài xế đang online (Không giới hạn km)
-                        io.to(sid).emit('place_order', socketData);
-                        notifiedCount++;
-                        
-                        const dLat = Number(driver.lat);
-                        const dLng = Number(driver.lng);
-                        const sLat = Number(socketData.lat_don);
-                        const sLng = Number(socketData.lng_don);
-                        if (!isNaN(dLat) && !isNaN(dLng) && !isNaN(sLat) && !isNaN(sLng)) {
-                            const dist = calculateDistance(sLat, sLng, dLat, dLng);
-                            console.log(`- Đã nổ đơn cho Tài xế ${driver.driverId} (Cách quán ${dist.toFixed(2)}km)`);
-                        } else {
-                            console.log(`- Đã nổ đơn cho Tài xế ${driver.driverId} (Chưa rõ vị trí)`);
-                        }
-                    });
-                    
-                    if (notifiedCount === 0) {
-                        console.log('⚠️ KHÔNG tìm thấy tài xế nào trong bán kính 10km.');
-                    } else {
-                        console.log(`✅ Đã gửi đơn hàng đến ${notifiedCount} tài xế.`);
-                    }
-                }
-
-                // --- SEND CONFIRMATION EMAIL TO USER ---
-                if (o.user_email) {
-                    console.log(`Đang gửi email xác nhận đến: ${o.user_email}`);
-                    // Fetch order items to include in email
-                    const [items] = await pool.query(`
-                        SELECT oi.*, p.name, p.image_url 
-                        FROM order_items oi 
-                        JOIN products p ON oi.product_id = p.id 
-                        WHERE oi.order_id = ?`, [orderId]);
-
-                    let itemsHtml = '';
-                    items.forEach(item => {
-                        let imgUrl = item.image_url;
-                        if (imgUrl && !imgUrl.startsWith('http')) {
-                            const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-                            imgUrl = imgUrl.startsWith('/') ? `${baseUrl}${imgUrl}` : `${baseUrl}/${imgUrl}`;
-                        }
-                        if (!imgUrl) imgUrl = 'https://cdn-icons-png.flaticon.com/512/706/706164.png';
-
-                        itemsHtml += `
-                            <tr>
-                                <td style="padding: 10px; border-bottom: 1px solid #eee;">
-                                    <img src="${imgUrl}" width="50" height="50" style="border-radius: 5px; object-fit: cover;" alt="Food" />
-                                </td>
-                                <td style="padding: 10px; border-bottom: 1px solid #eee; font-size: 14px;">${item.name}</td>
-                                <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center; font-size: 14px;">${item.quantity}</td>
-                                <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right; font-size: 14px; font-weight: bold;">${Number(item.price).toLocaleString('vi-VN')}đ</td>
-                            </tr>`;
-                    });
-
-                    const mailOptions = {
-                        from: `"GiaoHangTanNoi" <${process.env.EMAIL_USER}>`,
-                        to: o.user_email,
-                        subject: `✅Xác nhận đơn hàng #${orderId} - GiaoHangTanNoi`,
-                        html: `
-                            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                                <div style="background-color: #00b14f; color: white; padding: 30px; text-align: center;">
-                                    <h1 style="margin: 0; font-size: 24px;">Đơn hàng đã được xác nhận!</h1>
-                                    <p style="margin: 10px 0 0; opacity: 0.9;">Cảm ơn bạn đã tin tưởng dịch vụ của chúng tôi</p>
-                                </div>
-                                
-                                <div style="padding: 30px; color: #333;">
-                                    <p>Chào <b>${o.user_name}</b>,</p>
-                                    <p>Đơn hàng <b>#${orderId}</b> của bạn đã được nhà hàng xác nhận và đang bắt đầu chuẩn bị. Chúng tôi sẽ điều phối tài xế đến lấy hàng ngay lập tức.</p>
-                                    
-                                    <div style="background: #f9f9f9; border-radius: 10px; padding: 20px; margin: 25px 0;">
-                                        <h3 style="margin-top: 0; color: #00b14f; border-bottom: 1px solid #ddd; padding-bottom: 10px;">Chi tiết đơn hàng</h3>
-                                        <table style="width: 100%; border-collapse: collapse;">
-                                            ${itemsHtml}
-                                            <tr style="border-top: 2px solid #ddd;">
-                                                <td colspan="3" style="padding: 15px 0; font-weight: bold; text-align: right;">Tổng thanh toán:</td>
-                                                <td style="padding: 15px 0; font-weight: bold; text-align: right; color: #d63031; font-size: 18px;">${Number(o.total_price).toLocaleString('vi-VN')}đ</td>
-                                            </tr>
-                                        </table>
-                                    </div>
-
-                                    <div style="border-left: 4px solid #00b14f; padding-left: 15px; margin: 20px 0;">
-                                        <p style="margin: 0; font-size: 14px; color: #666;">Địa chỉ giao hàng:</p>
-                                        <p style="margin: 5px 0 0; font-weight: bold;">${o.delivery_address}</p>
-                                    </div>
-
-                                    <p style="font-size: 14px; color: #888; line-height: 1.6;">
-                                        Bạn có thể theo dõi hành trình của tài xế ngay trên ứng dụng GiaoHangTanNoi. Nếu có bất kỳ thắc mắc nào, đừng ngần ngại liên hệ với chúng tôi qua hotline hoặc reply email này.
-                                    </p>
-                                </div>
-
-                                <div style="background: #f4f4f4; padding: 20px; text-align: center; font-size: 12px; color: #999;">
-                                    <p style="margin: 0;">© 2026 GiaoHangTanNoi. All rights reserved.</p>
-                                    <p style="margin: 5px 0 0;">Số 1 Đường Cầu Diễn, Bắc Từ Liêm, Hà Nội</p>
-                                </div>
-                            </div>
-                        `
-                    };
-
-                    transporter.sendMail(mailOptions, (error, info) => {
-                        if (error) console.error('Lỗi gửi email xác nhận:', error);
-                        else console.log('Email xác nhận đã gửi: ' + info.response);
-                    });
-                }
-            }
-
-            // --- SEND EMAIL IF DELIVERED ---
-            if (status === 'delivered' && o.user_email) {
-                const mailOptions = {
-                    from: `"GiaoHangTanNoi - Dịch vụ Giao hàng" <${process.env.EMAIL_USER || 'haiquan2482006@gmail.com'}>`,
-                    to: o.user_email,
-                    subject: `Đơn hàng #${orderId} giao hàng thành công!`,
-                    text: `Chào ${o.user_name || 'bạn'},
-
-Đơn hàng #${orderId} của bạn đã giao thành công! Mọi hỗ trợ gì hãy liên hệ vào gmail: haiquan2482006@gmail.com
-
-Cảm ơn bạn đã sử dụng dịch vụ!`
-                };
-
-                transporter.sendMail(mailOptions, (error, info) => {
-                    if (error) {
-                        console.error('Lỗi gửi email:', error);
-                    } else {
-                        console.log('Email sent: ' + info.response);
-                    }
+                io.emit('place_order', {
+                    orderId: req.params.id,
+                    ma_don_hang: standardizedCode,
+                    ten_khach_hang: fullOrder.customer_name,
+                    ten_mon_an: itemDetails,
+                    tong_tien: new Intl.NumberFormat('vi-VN').format(fullOrder.total_price) + 'k',
+                    ten_quan: fullOrder.shop_name,
+                    hinh_anh_quan: fullOrder.shop_image,
+                    lat_don: Number(fullOrder.shop_lat),
+                    lng_don: Number(fullOrder.shop_lng),
+                    dia_chi_giao: fullOrder.delivery_address,
+                    lat_tra: Number(fullOrder.delivery_lat),
+                    lng_tra: Number(fullOrder.delivery_lng)
                 });
             }
         }
 
         res.json({ success: true });
-    } catch (err) {
-        // Fallback Success for status update
-        console.error("DB Error Update Status, using mock:", err.message);
-        res.json({ success: true });
+    } catch (err) { 
+        console.error(err);
+        res.json({ success: false }); 
     }
 });
 
-// Likes / Favorites
-app.post('/api/like', async (req, res) => {
-    const { maNguoiDung, maQuan } = req.body;
+// --- AI CHAT ENDPOINT ---
+app.post('/api/chat', async (req, res) => {
+    const { message, userId } = req.body;
     try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        // Ensure table exists (quick fix for prototype)
-        await pool.query(`CREATE TABLE IF NOT EXISTS favorites (
-            user_id INT NOT NULL,
-            shop_id INT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_id, shop_id)
-        )`);
+        // 1. Gửi tới n8n để xử lý ngôn ngữ tự nhiên
+        const n8nResponse = await axios.post(process.env.N8N_WEBHOOK_URL, {
+            action: 'chat',
+            message: message,
+            userId: userId,
+            source: 'web_chat'
+        });
 
-        // Check if already liked
-        const [exists] = await pool.query('SELECT * FROM favorites WHERE user_id = ? AND shop_id = ?', [maNguoiDung, maQuan]);
-        
-        if (exists.length > 0) {
-            // Unlike
-            await pool.query('DELETE FROM favorites WHERE user_id = ? AND shop_id = ?', [maNguoiDung, maQuan]);
-            res.json({ success: true, message: 'Unliked', isFavorite: false });
-        } else {
-            // Like
-            await pool.query('INSERT INTO favorites (user_id, shop_id) VALUES (?, ?)', [maNguoiDung, maQuan]);
-            res.json({ success: true, message: 'Liked', isFavorite: true });
+        let aiReply = n8nResponse.data.output || n8nResponse.data.reply || n8nResponse.data.message || "Tôi không hiểu ý bạn lắm, bạn có thể nói rõ hơn không?";
+        let suggestedProducts = [];
+
+        // 2. Nếu n8n trả về yêu cầu tìm sản phẩm hoặc dựa trên từ khóa đơn giản
+        const lowerMsg = message.toLowerCase();
+        if (lowerMsg.includes('món') || lowerMsg.includes('ăn') || lowerMsg.includes('uống') || lowerMsg.includes('đói') || lowerMsg.includes('gợi ý')) {
+            const [products] = await pool.query(`
+                SELECT p.*, s.name as shop_name 
+                FROM products p 
+                JOIN shops s ON p.shop_id = s.id 
+                ORDER BY RAND() LIMIT 3
+            `);
+            suggestedProducts = products;
         }
-    } catch (err) {
-        console.error("DB Error Like, using mock:", err.message);
-        // Mock success
-        res.json({ success: true, message: 'Liked (Mock)', isFavorite: true });
-    }
-});
-
-app.get('/api/like/:userId', async (req, res) => {
-    try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        // Ensure table exists
-         await pool.query(`CREATE TABLE IF NOT EXISTS favorites (
-            user_id INT NOT NULL,
-            shop_id INT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_id, shop_id)
-        )`);
-
-        const [rows] = await pool.query(`
-            SELECT s.* FROM favorites f 
-            JOIN shops s ON f.shop_id = s.id 
-            WHERE f.user_id = ?
-        `, [req.params.userId]);
-        res.json(rows);
-    } catch (err) {
-         console.error("DB Error Get Likes, using mock:", err.message);
-         res.json([]); // Return empty list
-    }
-});
-
-// Reviews
-app.post('/api/reviews', async (req, res) => {
-    const { orderId, driverId, userId, rating, comment } = req.body;
-    try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        await pool.query(
-            'INSERT INTO reviews (order_id, driver_id, user_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
-            [orderId, driverId, userId, rating, comment]
-        );
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.get('/api/users/:id/reviews', async (req, res) => {
-    const driverId = req.params.id;
-    try {
-        await pool.query(`USE ${process.env.DB_NAME}`);
-        const [reviews] = await pool.query(`
-            SELECT r.*, u.full_name as user_name, u.avatar_url as user_avatar
-            FROM reviews r
-            JOIN users u ON r.user_id = u.id
-            WHERE r.driver_id = ?
-            ORDER BY r.created_at DESC
-        `, [driverId]);
-
-        const [stats] = await pool.query(`
-            SELECT AVG(rating) as average_rating, COUNT(*) as total_reviews
-            FROM reviews
-            WHERE driver_id = ?
-        `, [driverId]);
 
         res.json({
-            reviews,
-            averageRating: stats[0].average_rating || 0,
-            totalReviews: stats[0].total_reviews || 0
+            success: true,
+            reply: aiReply,
+            suggestedProducts: suggestedProducts
         });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+
+    } catch (error) {
+        console.error("❌ AI Chat Error:", error.message);
+        // Fallback đơn giản nếu n8n lỗi
+        res.status(200).json({
+            success: true,
+            reply: "Chào bạn, hiện tại hệ thống AI đang bảo trì một chút. Tôi có thể giúp gì cho bạn về các đơn hàng không?",
+            suggestedProducts: []
+        });
     }
 });
 
-// CATCH-ALL ROUTE FOR FRONTEND (Regex for Express 5)
-app.get(/^(?!\/api).+/, (req, res) => {
+// Static files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Catch-all route cho Frontend (Sửa lỗi '*' cho các bản Express mới)
+app.get(/^(.*)$/, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 
-
 const PORT = process.env.PORT || 3000;
-
-async function checkAndMigrate() {
-
-    try {
-
-        const connection = await pool.getConnection();
-
-        try {
-
-            console.log("🔄 Initializing Database...");
-
-            // ... (code cũ)
-
-            await connection.query(`USE ${process.env.DB_NAME}`);
-
-
-
-            // TỰ ĐỘNG CẬP NHẬT ẢNH THẬT KHI KHỞI ĐỘNG
-
-            console.log("🖼️ Syncing product images...");
-
-            const productUpdates = [
-
-                { name: 'Cơm rang dưa bò', image: 'comrangduabo.webp' },
-
-                { name: 'Cơm rang đùi gà', image: 'comrangduiga.webp' },
-
-                { name: 'Cơm rang hải sản', image: 'comranghaisan.webp' },
-
-                { name: 'Cơm rang thập cẩm', image: 'comrangthapcam.webp' },
-
-                { name: 'Burger Bulgogi', image: 'Burger_Bulgogi.webp' },
-
-                { name: 'Burger tôm', image: 'Burger_Tom.webp' },
-
-                { name: 'Gà Rán Phần', image: 'garanphan.webp' },
-
-                { name: 'Gà sốt dâu 3 miếng', image: 'gasotdau3mieng.webp' },
-
-                { name: 'Gà sốt phô mai 3 miếng', image: 'gasotphomai3mieng.webp' },
-
-                { name: 'Mỳ', image: 'myy.webp' },
-
-                { name: 'Bơ xào', image: 'boxao.png' },
-
-                { name: 'Cocacola', image: 'coca.png' },
-
-                { name: 'Cơm thố bơ', image: 'comthobo.png' },
-
-                { name: 'Cơm thố đặc biệt', image: 'comthodacbiet.png' },
-
-                { name: 'Cơm thố dương châu', image: 'comthoduongchau.png' },
-
-                { name: 'Cơm thố sườn nướng', image: 'comthosuonnuong.png' },
-
-                { name: 'Cơm thố gà quay', image: 'comthogaquay.png' },
-
-                { name: 'Cơm thố gà', image: 'comthoga.png' },
-
-                { name: 'Gà nướng', image: 'ganuong.png' },
-
-                { name: 'Gà hầm thuốc bắc', image: 'gahamthuoc.jpg' },
-
-                { name: 'Gà hầm thập cẩm', image: 'gahamthapcam.jpg' },
-
-                { name: 'Gà đóng hộp', image: 'gadonghop.jpg' },
-
-                { name: 'Gà hầm sâm', image: 'gahamxam.jpg' },
-
-                { name: 'Gà hầm ngải cứu', image: 'gahamngaicuu.jpg' },
-
-                { name: 'Gà hầm hạt sen', image: 'gahamhatsen.jpg' },
-
-                { name: 'Hồng trà kem phô mai', image: 'hongtrakemphomaisizeM.webp' },
-
-                { name: 'Ô long kem phô mai', image: 'olongkemphomaisizeM.webp' },
-
-                { name: 'Trà xanh kem phô mai', image: 'traxanhkemphomaisizeM.webp' },
-
-                { name: 'Hồng trà khổng lồ', image: 'hongtramanquehoakhonglo.webp' },
-
-                { name: 'Trà trân châu khổng lồ', image: 'suatuoichantrauduonghokhonglo.webp' },
-
-                { name: 'Trà sữa dâu tây', image: 'trasuadaytaysizeM.webp' },
-
-                { name: 'Bánh cuốn chả nướng', image: 'banhcuonchanuong.webp' },
-
-                { name: 'Bánh cuốn chả quế', image: 'banhcuonchaque.webp' },
-
-                { name: 'Bún chả chấm', image: 'bunchacham.webp' },
-
-                { name: 'Bánh cuốn trứng', image: 'banhcuontrung.webp' },
-
-                { name: 'Bún bò huế', image: 'bunbohue.jpg' },
-
-                { name: 'Super sundae xoài', image: 'Super_sundae_xoai.webp' },
-
-                { name: 'Super sundae dâu tây', image: 'Supersundae_dautay.webp' },
-
-                { name: 'Super sundae socola', image: 'Supersundaesocola.webp' },
-
-                { name: 'Trà bí đao', image: 'tradaobigsize.webp' },
-
-                { name: 'Trà ô long kiwi', image: 'traolongkiwi.webp' },
-
-                { name: 'Dương chi cam lộ', image: 'duongchicamlo.webp' }
-
-            ];
-
-
-
-            for (const item of productUpdates) {
-
-                await connection.query(
-
-                    'UPDATE products SET image_url = ? WHERE name = ?',
-
-                    [`/uploads/${item.image}`, item.name]
-
-                );
-
-            }
-
-            console.log("✅ Product images synced.");
-
-            // Check if tables exist, if not run migration manually or via seed
-            const [tables] = await connection.query("SHOW TABLES LIKE 'users'");
-            if (tables.length === 0) {
-                console.log("⚠️ Tables not found. Creating schema...");
-                const schemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-                const statements = schemaSql.split(';').filter(s => s.trim());
-                for (const statement of statements) {
-                    if (statement.trim()) {
-                        await connection.query(statement);
-                    }
-                }
-                console.log("✅ Schema created.");
-                
-                // Optional: Run Seed here if needed
-                // const { exec } = require('child_process');
-                // exec('node server/seed.js', (err, stdout) => console.log(stdout));
-            } else {
-                // Check for delivery_lat (Migration check)
-                const [columnsLat] = await connection.query("SHOW COLUMNS FROM orders LIKE 'delivery_lat'");
-                if (columnsLat.length === 0) {
-                    console.log('Migrating: Adding delivery_lat to orders table...');
-                    await connection.query('ALTER TABLE orders ADD COLUMN delivery_lat DECIMAL(10, 8)');
-                }
-
-                // Check for delivery_lng
-                const [columnsLng] = await connection.query("SHOW COLUMNS FROM orders LIKE 'delivery_lng'");
-                if (columnsLng.length === 0) {
-                    console.log('Migrating: Adding delivery_lng to orders table...');
-                    await connection.query('ALTER TABLE orders ADD COLUMN delivery_lng DECIMAL(11, 8)');
-                }
-
-                // Check for product_code
-                const [columnsPC] = await connection.query("SHOW COLUMNS FROM products LIKE 'product_code'");
-                if (columnsPC.length === 0) {
-                    console.log('Migrating: Adding product_code to products table...');
-                    await connection.query('ALTER TABLE products ADD COLUMN product_code VARCHAR(50)');
-                }
-
-                // Auto-generate product codes for ALL products if missing
-                const [productsWithoutCode] = await connection.query('SELECT id, name FROM products WHERE product_code IS NULL OR product_code = ""');
-                
-                if (productsWithoutCode.length > 0) {
-                    console.log(`🏷️ Generating codes for ${productsWithoutCode.length} products...`);
-                    for (const product of productsWithoutCode) {
-                        const firstChar = product.name.trim().charAt(0).toUpperCase();
-                        // Find how many products already have a code starting with this letter
-                        const [existing] = await connection.query(
-                            'SELECT COUNT(*) as count FROM products WHERE product_code LIKE ?',
-                            [`${firstChar}%`]
-                        );
-                        const nextNumber = existing[0].count + 1;
-                        const newCode = `${firstChar}${String(nextNumber).padStart(3, '0')}`; // e.g., G001
-                        
-                        await connection.query(
-                            'UPDATE products SET product_code = ? WHERE id = ?',
-                            [newCode, product.id]
-                        );
-                    }
-                    console.log("✅ All product codes generated.");
-                }
-            }
-
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('Migration check failed:', error);
-    }
-}
-
-checkAndMigrate().then(() => {
-    server.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-    });
-});
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

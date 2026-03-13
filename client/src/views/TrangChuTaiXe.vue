@@ -292,13 +292,15 @@ const acceptOrder = async () => {
         
         // 3. Cập nhật chỉ đường: Từ Tài xế -> Quán ăn (lat_don, lng_don)
         if (driverLocation.value && currentOrder.value.lat_don) {
+            console.log("📍 Vẽ đường tới quán ăn:", currentOrder.value.lat_don, currentOrder.value.lng_don);
             updateRouting(
-                driverLocation.value.lat, 
-                driverLocation.value.lng, 
-                currentOrder.value.lat_don, 
-                currentOrder.value.lng_don
+                driverLocation.value.lat,
+                driverLocation.value.lng,
+                Number(currentOrder.value.lat_don),
+                Number(currentOrder.value.lng_don)
             );
         }
+
     } catch (err) {
         console.error("Lỗi nhận đơn:", err);
         const errorMsg = err.response?.data?.error || err.message;

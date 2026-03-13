@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS shops (
   address TEXT,
   lat DECIMAL(10, 8),
   lng DECIMAL(11, 8),
+  bank_code VARCHAR(50) DEFAULT 'MB',
+  bank_account VARCHAR(50) DEFAULT '0396222614',
+  telegram_chat_id VARCHAR(50),
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
@@ -47,6 +50,9 @@ CREATE TABLE IF NOT EXISTS orders (
   delivery_lat DECIMAL(10, 8),
   delivery_lng DECIMAL(11, 8),
   pickup_address TEXT,
+  customer_bank_code VARCHAR(50),
+  customer_bank_account VARCHAR(50),
+  customer_bank_name VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (shop_id) REFERENCES shops(id),

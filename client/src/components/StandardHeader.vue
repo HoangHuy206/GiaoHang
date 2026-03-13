@@ -18,6 +18,7 @@ const homeLink = computed(() => {
   if (!auth.user) return '/';
   if (auth.user.role === 'driver') return '/trangchutaixe';
   if (auth.user.role === 'shop') return '/shop-admin';
+  if (auth.user.role === 'admin') return '/admin';
   return '/food';
 });
 
@@ -70,6 +71,10 @@ const openCart = () => {
         <template v-else-if="auth.user.role === 'shop'">
           <router-link to="/shop-stats" class="nav-link">Thống kê</router-link>
         </template>
+
+        <template v-else-if="auth.user.role === 'admin'">
+          <router-link to="/admin" class="nav-link">Quản trị Shop</router-link>
+        </template>
       </nav>
 
       <div class="header-right">
@@ -88,9 +93,9 @@ const openCart = () => {
             </button>
             
             <router-link to="/profile" class="profile-link">
-              <span class="user-name">{{ auth.user.full_name || auth.user.username }}</span>
+              <span class="user-name">{{ (auth.user?.full_name || auth.user?.username) || 'Người dùng' }}</span>
               <div class="avatar-circle">
-                {{ (auth.user.full_name || auth.user.username).charAt(0).toUpperCase() }}
+                {{ (auth.user?.full_name || auth.user?.username || 'U').charAt(0).toUpperCase() }}
               </div>
             </router-link>
             
@@ -112,6 +117,10 @@ const openCart = () => {
 
         <template v-else-if="auth.user.role === 'shop'">
           <router-link to="/shop-stats" class="mobile-link" @click="isMobileMenuOpen = false">Thống kê</router-link>
+        </template>
+
+        <template v-else-if="auth.user.role === 'admin'">
+          <router-link to="/admin" class="mobile-link" @click="isMobileMenuOpen = false">Quản trị Shop</router-link>
         </template>
 
         <button @click="logout" class="mobile-link text-red-500 border-t mt-2 pt-2">Đăng xuất</button>
