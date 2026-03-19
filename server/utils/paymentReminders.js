@@ -11,9 +11,20 @@ const userStates = {};
 
 let bot = null;
 if (token) {
-    bot = new TelegramBot(token, { polling: true });
+    try {
+        bot = new TelegramBot(token, { polling: true });
+        
+        bot.on('polling_error', (error) => {
+            if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
+                console.error("⚠️ CẢNH BÁO: Xung đột Bot Telegram (409 Conflict). Vui lòng kiểm tra xem bạn có đang chạy server ở terminal khác hoặc n8n không.");
+                // Dừng polling để tránh spam log
+                bot.stopPolling();
+            } else {
+                console.error("❌ Lỗi Telegram Polling:", error.code, error.message);
+            }
+        });
 
-    bot.on('message', async (msg) => {
+        bot.on('message', async (msg) => {
         const chatId = msg.chat.id;
         const text = msg.text;
         const chatIdStr = String(chatId);
@@ -388,6 +399,9 @@ if (token) {
         }
         bot.answerCallbackQuery(q.id);
     });
+    } catch (err) {
+        console.error("❌ Lỗi Telegram Bot Initialization:", err);
+    }
 }
 
 module.exports = function(io) {
