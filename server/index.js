@@ -536,8 +536,17 @@ app.get('/api/shops/:id/stats', async (req, res) => {
     }
 });
 
+// Cấu hình phục vụ file tĩnh
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.get(/^(.*)$/, (req, res) => res.sendFile(path.join(__dirname, '../client/dist/index.html')));
+app.use(express.static(path.join(__dirname, '../client/dist')));
+
+// Bắt mọi request khác (không phải API) và trả về index.html của Vue.js
+app.get('*', (req, res) => {
+    // Chỉ trả về index.html nếu request không phải là file tĩnh hoặc API
+    if (!req.url.startsWith('/api/') && !req.url.startsWith('/uploads/')) {
+        res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+    }
+});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
