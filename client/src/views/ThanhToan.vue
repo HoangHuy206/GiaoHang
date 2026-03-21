@@ -1,5 +1,5 @@
 <template>
-  <div class="checkout-page-wrapper">
+  <div class="checkout-page-wrapper animate-fade-in">
     <div class="checkout-container-desktop">
       <div class="checkout-header">
         <button class="back-btn" @click="$router.go(-1)">
@@ -174,11 +174,13 @@ import { useRouter } from 'vue-router';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { SOCKET_URL, API_BASE_URL } from '../config';
+import { useToastStore } from '../stores/toast';
 
 export default {
   name: "ThanhToan",
   setup() {
     const router = useRouter();
+    const toast = useToastStore();
 
     const socket = io(SOCKET_URL);
 
@@ -294,17 +296,17 @@ export default {
     };        
 
     const qrCodeUrl = computed(() => {
-        const bId = shopInfo.value?.bank_code || 'MB';
+        let bId = shopInfo.value?.bank_code || 'MB';
         const accNo = shopInfo.value?.bank_account || '0396222614';
-        
+
+        // Chuẩn hóa mã VietinBank cho SePay
+        if (bId.toUpperCase() === 'ICB') bId = 'VietinBank';
+
         if (!randomOrderCode.value) return '';
 
-        // Sử dụng giá trị finalTotal đã tính toán chính xác
         const amount = Math.round(finalTotal.value);
-
-        return `https://img.vietqr.io/image/${bId}-${accNo}-qr_only.png?amount=${amount}&addInfo=${randomOrderCode.value}`;
+        return `https://qr.sepay.vn/img?bank=${bId}&acc=${accNo}&template=compact&amount=${amount}&des=${randomOrderCode.value}`;
     });
-
             const checkPaymentStatus = async () => {
                 try {
                     // Thêm timestamp ?t= để chống cache trình duyệt
@@ -340,7 +342,7 @@ export default {
               if (timerInterval) clearInterval(timerInterval);              timerInterval = setInterval(() => {
                 if (qrTimeLeft.value > 0) qrTimeLeft.value--;
                 else {
-                    alert("Hết thời gian thanh toán!");
+                    toast.error("Hết thời gian thanh toán!");
                     location.reload();
                 }
               }, 1000);
@@ -382,7 +384,7 @@ export default {
              // Timeout sau 60s nếu không thấy tiền (tránh treo vô hạn)
              setTimeout(() => {
                  if (paymentStatus.value === 'processing') {
-                     alert("Hệ thống chưa nhận được tiền. Vui lòng thử lại hoặc liên hệ hỗ trợ.");
+                     toast.error("Hệ thống chưa nhận được tiền. Vui lòng thử lại hoặc liên hệ hỗ trợ.");
                      paymentStatus.value = 'pending';
                      clearInterval(checkInterval);
                  }
@@ -400,7 +402,7 @@ export default {
     const setHardLocation = () => {
       userInfo.address = "Trường Cao Đẳng Công Nghệ Cao Hà Nội";
       selectedCoords.value = { lat: 21.0464, lng: 105.7480 };
-      alert("Đã chọn vị trí: Trường Cao Đẳng Công Nghệ Cao Hà Nội");
+      toast.info("Đã chọn vị trí: Trường Cao Đẳng Công Nghệ Cao Hà Nội");
     };
 
     const openMapModal = () => {
@@ -458,12 +460,12 @@ export default {
 
     // --- HÀM GỬI ĐƠN HÀNG (ĐÃ SỬA) ---
     const submitOrder = async () => {
-       if(items.value.length === 0) return alert("Giỏ hàng trống!");
-       if(!userInfo.address) return alert("Vui lòng nhập địa chỉ!");
+       if(items.value.length === 0) return toast.warning("Giỏ hàng trống!");
+       if(!userInfo.address) return toast.warning("Vui lòng nhập địa chỉ!");
 
        // Nếu đang hiện QR và chưa thanh toán xong thì không cho bấm đặt hàng lại
        if (paymentMethod.value === 'banking' && randomOrderCode.value && paymentStatus.value === 'pending') {
-           return alert("Vui lòng hoàn tất thanh toán chuyển khoản phía trên!");
+           return toast.warning("Vui lòng hoàn tất thanh toán chuyển khoản phía trên!");
        }
 
        dangXuLy.value = true;
@@ -474,7 +476,7 @@ export default {
            const userId = userObj ? userObj.id : null;
 
            if (!userId) {
-               alert("Vui lòng đăng nhập lại!");      
+               toast.error("Vui lòng đăng nhập lại!");      
                router.push('/login');
                return;
            }
@@ -512,7 +514,7 @@ export default {
                if (paymentMethod.value === 'banking') {
                    // Hiện QR với mã thật Dxxx
                    await generateNewQR(orderId, maDonHang);
-                   alert("Vui lòng thanh toán qua mã QR phía dưới.");
+                   toast.info("Vui lòng thanh toán qua mã QR phía dưới.");
                    nextTick(() => {
                        const el = document.querySelector('.qr-container');
                        if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -532,14 +534,14 @@ export default {
                    };
                    socket.emit('place_order', socketData);
 
-                   alert("Đặt hàng thành công! Mã đơn: " + maDonHang);
+                   toast.success("Đặt hàng thành công! Mã đơn: " + maDonHang);
                    localStorage.removeItem('tempCart');
                    router.push('/theodoidonhang');
                }
            }
        } catch (error) {
            console.error("Lỗi đặt hàng:", error);
-           alert("Lỗi: " + (error.response?.data?.message || error.message));
+           toast.error("Lỗi: " + (error.response?.data?.message || error.message));
        } finally {
            dangXuLy.value = false;
        }
@@ -668,4 +670,82 @@ export default {
 .total-row { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; color: #333; margin-bottom: 20px; }
 .total-price { color: #00b14f; font-size: 22px; }
  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+/* CSS TỐI ƯU MOBILE */
+@media (max-width: 768px) {
+    .checkout-page-wrapper {
+        padding: 10px 5px;
+    }
+    .checkout-content {
+        flex-direction: column; /* Chuyển thành 1 cột dọc */
+        gap: 15px;
+    }
+    .left-column, .right-column {
+        width: 100%;
+        flex: none;
+    }
+    .right-column {
+        position: static; /* Bỏ sticky để không bị che khuất */
+        order: 2; /* Đảm bảo tóm tắt nằm dưới các lựa chọn */
+    }
+    .checkout-header h1 {
+        font-size: 20px;
+    }
+    .section-card, .order-summary-card {
+        padding: 15px;
+        margin-bottom: 10px;
+    }
+    .input-wrapper {
+        flex-direction: column;
+    }
+    .button-group-vertical {
+        width: 100%;
+        flex-direction: row;
+        gap: 8px;
+        margin-top: 10px;
+    }
+    .detect-btn, .map-btn {
+        flex: 1;
+        width: auto;
+        justify-content: center;
+        padding: 0 8px;
+        font-size: 12px;
+        height: 40px;
+    }
+    .btn-text {
+        margin-left: 5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .address-input {
+        width: 100%;
+        font-size: 14px;
+        padding: 12px;
+    }
+    .place-order-btn {
+        position: sticky; /* Nút đặt hàng sẽ dính ở mép dưới điện thoại để dễ bấm */
+        bottom: 10px;
+        z-index: 100;
+        padding: 15px;
+        margin-top: 10px;
+        box-shadow: 0 -4px 15px rgba(0,0,0,0.1);
+    }
+    .payment-methods {
+        flex-direction: column;
+    }
+    .pay-method {
+        width: 100%;
+        min-width: unset;
+    }
+    .qr-img {
+        width: 180px;
+        height: 180px;
+    }
+    .total-row {
+        font-size: 16px;
+    }
+    .total-price {
+        font-size: 18px;
+    }
+}
 </style>

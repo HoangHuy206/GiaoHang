@@ -1,17 +1,18 @@
 <template>
-  <StandardHeader v-if="!selectedShop" />
-  <div class="container mx-auto p-4 mt-4">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-red-800">Quản Trị Hệ Thống (Admin)</h1>
-        <div class="text-sm bg-gray-100 p-2 rounded border">
-            Chào, <b>{{ auth.user?.full_name || auth.user?.username }}</b> (Admin)
-        </div>
-    </div>
-
-    <div v-if="loading" class="text-center py-10">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-red-700 mx-auto"></div>
-        <p class="mt-4 text-gray-600">Đang tải danh sách Shop...</p>
-    </div>
+  <div class="admin-dashboard-wrapper animate-fade-in">
+    <StandardHeader v-if="!selectedShop" />
+    <div class="container mx-auto p-4 mt-4">
+      <div class="flex justify-between items-center mb-6">
+          <h1 class="text-3xl font-bold text-red-800">Quản Trị Hệ Thống (Admin)</h1>
+          <div class="text-sm bg-gray-100 p-2 rounded border">
+              Chào, <b>{{ auth.user?.full_name || auth.user?.username }}</b> (Admin)
+          </div>
+      </div>
+  
+      <div v-if="loading" class="text-center py-10">
+          <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-red-700 mx-auto"></div>
+          <p class="mt-4 text-gray-600">Đang tải danh sách Shop...</p>
+      </div>
 
     <div v-else>
         <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
@@ -68,6 +69,7 @@
                 </table>
             </div>
         </div>
+    </div>
     </div>
 
     <!-- Shop Detail Modal -->
@@ -136,10 +138,12 @@
 import { ref, onMounted } from 'vue';
 import StandardHeader from '../components/StandardHeader.vue';
 import { useAuthStore } from '../stores/auth';
+import { useToastStore } from '../stores/toast';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 
 const auth = useAuthStore();
+const toast = useToastStore();
 const shops = ref([]);
 const loading = ref(true);
 const selectedShop = ref(null);
@@ -151,7 +155,7 @@ const fetchShops = async () => {
         shops.value = res.data;
     } catch (e) {
         console.error("Error fetching shops:", e);
-        alert(e.response?.data?.error || "Lỗi khi tải danh sách Shop");
+        toast.error(e.response?.data?.error || "Lỗi khi tải danh sách Shop");
         if (e.response?.status === 403) {
             window.location.href = '/';
         }
@@ -191,11 +195,11 @@ const confirmDelete = async (shop) => {
             await axios.delete(`${API_BASE_URL}/api/admin/shops/${shop.id}`, {
                 data: { userId: auth.user.id }
             });
-            alert(`Đã xóa thành công Shop "${shop.name}"`);
+            toast.success(`Đã xóa thành công Shop "${shop.name}"`);
             fetchShops(); // Reload
         } catch (e) {
             console.error(e);
-            alert("Lỗi khi xóa Shop: " + (e.response?.data?.error || e.message));
+            toast.error("Lỗi khi xóa Shop: " + (e.response?.data?.error || e.message));
         }
     }
 };
@@ -203,7 +207,7 @@ const confirmDelete = async (shop) => {
 onMounted(() => {
     // Basic protection: check if user is admin AND has correct telegram ID
     if (auth.user?.role !== 'admin' || auth.user?.telegram_chat_id !== '5807941249') {
-        alert("Chỉ Admin chính chủ (ID: 5807941249) mới có quyền truy cập trang này!");
+        toast.warning("Chỉ Admin chính chủ mới có quyền truy cập trang này!");
         window.location.href = '/';
         return;
     }

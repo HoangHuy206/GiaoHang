@@ -372,8 +372,38 @@ if (token) {
         else if (data.startsWith('refunded_')) {
             const orderId = data.split('_')[1];
             await pool.query("UPDATE orders SET payment_status = 'refunded', status = 'cancelled' WHERE id = ?", [orderId]);
-            bot.deleteMessage(chatId, message.message_id);
-            bot.sendMessage(chatId, `✅ Đã xác nhận hoàn tiền đơn DH${orderId}`);
+            
+            // Xóa tin nhắn chứa mã QR để nó "biến mất"
+            bot.deleteMessage(chatId, message.message_id).catch(() => {});
+            
+            // Gửi thông báo thành công mới
+            bot.sendMessage(chatId, `✅ <b>XÁC NHẬN:</b> Hoàn tiền đơn hàng <b>DH${orderId}</b> thành công!\nTrạng thái: <b>Đã hoàn trả tiền</b>`, { parse_mode: 'HTML' });
+        }
+        else if (data.startsWith('contact_cust_')) {
+            const orderId = data.split('_')[2];
+            try {
+                const [rows] = await pool.query(`
+                    SELECT u.email, u.full_name, u.phone 
+                    FROM orders o 
+                    JOIN users u ON o.user_id = u.id 
+                    WHERE o.id = ?`, [orderId]);
+                
+                if (rows.length > 0) {
+                    const customer = rows[0];
+                    const contactMsg = `📧 <b>THÔNG TIN LIÊN HỆ KHÁCH HÀNG (DH${orderId})</b>\n\n` +
+                                     `👤 Họ tên: <b>${customer.full_name}</b>\n` +
+                                     `✉️ Email: <code>${customer.email}</code>\n` +
+                                     `📞 SĐT: <code>${customer.phone || 'Chưa cập nhật'}</code>\n\n` +
+                                     `<i>Chủ shop vui lòng liên hệ qua Email hoặc SĐT trên để lấy lại thông tin ngân hàng chính xác.</i>`;
+                    
+                    bot.sendMessage(chatId, contactMsg, { parse_mode: 'HTML' });
+                } else {
+                    bot.sendMessage(chatId, "❌ Không tìm thấy thông tin khách hàng cho đơn này.");
+                }
+            } catch (err) {
+                console.error("Lỗi lấy thông tin liên hệ:", err);
+                bot.sendMessage(chatId, "❌ Lỗi hệ thống khi lấy thông tin liên hệ.");
+            }
         }
         else if (data.startsWith('del_prod_')) {
             const prodId = data.split('_')[2];
@@ -418,15 +448,48 @@ module.exports = function(io) {
                 AND o.paid_at < NOW() - INTERVAL 2 MINUTE AND o.refund_notified = 0
             `);
             for (const o of orders) {
-                const msg = `⚠️ <b>HOÀN TIỀN DH${o.id}</b>\n💰 ${o.total_price}đ\n👤 ${o.customer_name}\n🏦 ${o.customer_bank_code} - ${o.customer_bank_account}`;
+                const amount = Math.round(o.total_price);
+                const bankCode = o.customer_bank_code || 'MB';
+                const accountNo = o.customer_bank_account || '';
+                const orderCode = `DH${o.id}`;
+
+                // Tạo mã QR VietQR để chuyển khoản nhanh
+                const qrUrl = `https://img.vietqr.io/image/${bankCode}-${accountNo}-compact2.jpg?amount=${amount}&addInfo=HOAN TIEN ${orderCode}`;
+
+                const msg = `⚠️ <b>YÊU CẦU HOÀN TIỀN ${orderCode}</b>\n\n` +
+                            `💰 Số tiền: <b>${new Intl.NumberFormat('vi-VN').format(amount)}đ</b>\n` +
+                            `👤 Khách hàng: <b>${o.customer_name}</b>\n` +
+                            `🏦 Ngân hàng: <b>${bankCode}</b>\n` +
+                            `💳 Số TK: <code>${accountNo}</code>\n\n` +
+                            `<i>Vui lòng quét mã QR bên dưới để hoàn tiền nhanh!</i>`;
+
                 const target = o.shopChatId || process.env.TELEGRAM_CHAT_ID;
-                if (target) bot.sendMessage(target, msg, { 
-                    parse_mode: 'HTML',
-                    reply_markup: { inline_keyboard: [[{ text: '✅ Đã hoàn tiền', callback_data: `refunded_${o.id}` }]] }
-                });
+
+                if (target) {
+                    try {
+                        await bot.sendPhoto(target, qrUrl, {
+                            caption: msg,
+                            parse_mode: 'HTML',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '✅ Đã hoàn tiền', callback_data: `refunded_${o.id}` }],
+                                    [{ text: '📞 Liên hệ (Sai thông tin)', callback_data: `contact_cust_${o.id}` }]
+                                ]
+                            }
+                        });
+                    } catch (err) {
+                        console.error("Lỗi gửi ảnh QR hoàn tiền:", err.message);
+                        // Nếu lỗi gửi ảnh (ví dụ URL lỗi), gửi tin nhắn văn bản thay thế
+                        bot.sendMessage(target, msg, {
+                            parse_mode: 'HTML',
+                            reply_markup: {
+                                inline_keyboard: [[{ text: '✅ Đã xác nhận hoàn tiền', callback_data: `refunded_${o.id}` }]]
+                            }
+                        });
+                    }
+                }
                 await pool.query('UPDATE orders SET refund_notified = 1 WHERE id = ?', [o.id]);
-            }
-        } catch (e) { console.error("Cron error:", e); }
+            }        } catch (e) { console.error("Cron error:", e); }
     });
     console.log('🚀 Service Started (V3)');
     return { bot };

@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import StandardHeader from '../components/StandardHeader.vue'
 import { useAuthStore } from '../stores/auth'
+import { useToastStore } from '../stores/toast'
 import axios from 'axios'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -13,883 +14,503 @@ import { io } from 'socket.io-client'
 import { SOCKET_URL, API_BASE_URL } from '../config'
 import ChatBox from '../components/ChatBox.vue'
 
-// ====== XỬ LÝ DỮ LIỆU & ẢNH ======
-
 const router = useRouter()
-
 const auth = useAuthStore()
-
-import phoGaImg from '@/assets/img/anhquanan/pho-ga-anh-thu.png'
-
-import toco from '@/assets/img/anhND/toco.jpg'
-
-
-
-// Lấy thông tin người dùng từ store hoặc localStorage
-
-const userString = localStorage.getItem('user')
-
-const userInfo = userString ? JSON.parse(userString) : {}
-
-const userName = ref(userInfo.full_name || userInfo.fullname || userInfo.username || 'Tài xế Pro')
-
-const userPhone = ref(userInfo.phone || 'Chưa cập nhật')
-
-const userEmail = ref(userInfo.email || 'Chưa cập nhật')
-
-
+const toast = useToastStore()
 
 // ====== TRẠNG THÁI GIAO DIỆN ======
-
-const isSidebarOpen = ref(true)    
-
 const isOnline = ref(false)
-
-        
 const currentOrder = ref(null)     
-const isAccepted = ref(false) // Thêm trạng thái đã nhận đơn
+const isAccepted = ref(false)
 const isChatOpen = ref(false)
 const hasNewMessage = ref(false)
 const driverLocation = ref(null)   
-const currentTab = ref('home') // 'home', 'income', 'inbox', 'profile'
+const currentTab = ref('home')
+
+// Tự động sửa lỗi map khi chuyển tab
+watch(currentTab, async (newTab) => {
+    if (newTab === 'home') {
+        await nextTick();
+        if (map) {
+            setTimeout(() => {
+                map.invalidateSize();
+            }, 100);
+        }
+    }
+});
 const myHistory = ref([])
 const totalIncome = ref(0)
 const fileInput = ref(null)
 
-// Driver Stats
-const driverStats = ref({
-    averageRating: 5,
-    totalReviews: 0
-});
+const driverStats = ref({ averageRating: 5, totalReviews: 0 });
 
-const fetchDriverStats = async () => {
-    if (!auth.user?.id) return;
-    try {
-        const res = await axios.get(`${API_BASE_URL}/api/users/${auth.user.id}/reviews`);
-        driverStats.value = {
-            averageRating: Number(res.data.averageRating) || 5,
-            totalReviews: res.data.totalReviews || 0
-        };
-    } catch (e) {
-        console.error('Lỗi tải đánh giá:', e);
-    }
+const formatPrice = (price) => {
+    if (!price) return '0đ';
+    const val = typeof price === 'string' ? parseFloat(price.replace(/[^\d]/g, '')) : price;
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
 };
 
-// Hàm xử lý đường dẫn ảnh đại diện
+const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+};
+
 const getAvatarUrl = (path) => {
     if (!path) return '';
-    if (path.startsWith('http')) {
-        return path.replace('http://localhost:3000', API_BASE_URL);
-    }
+    if (path.startsWith('http')) return path.replace('http://localhost:3000', API_BASE_URL);
     return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
 };
 
-// Xử lý đổi Avatar
 const handleFileChange = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-
     const formData = new FormData();
     formData.append('avatar', file);
     formData.append('full_name', auth.user.full_name || '');
-    formData.append('address', auth.user.address || '');
-    formData.append('email', auth.user.email || '');
-
     try {
         const res = await axios.put(`${API_BASE_URL}/api/users/${auth.user.id}`, formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
         });
-        
         if (res.data.success) {
             auth.user = res.data.user;
             localStorage.setItem('user', JSON.stringify(res.data.user));
-            alert("Đổi ảnh đại diện thành công!");
+            toast.success("Đổi ảnh đại diện thành công!");
         }
-    } catch (e) {
-        alert("Lỗi tải ảnh: " + (e.response?.data?.error || e.message));
-    }
+    } catch (e) { toast.error("Lỗi: " + e.message); }
 };
-
-// Xử lý cập nhật thông tin (Nếu cần thêm form edit)
-const updateProfile = async () => {
-    try {
-        const res = await axios.put(`${API_BASE_URL}/api/users/${auth.user.id}`, {
-            full_name: auth.user.full_name,
-            email: auth.user.email,
-            address: auth.user.address
-        });
-        if (res.data.success) {
-            auth.user = res.data.user;
-            localStorage.setItem('user', JSON.stringify(res.data.user));
-            alert("Cập nhật thông tin thành công!");
-        }
-    } catch (e) {
-        alert("Lỗi: " + e.message);
-    }
-};
-
-// Âm thanh thông báo
-const notificationSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3')
 
 const handleLogout = () => {
   if (confirm('Bạn có chắc chắn muốn đăng xuất?')) {
-    auth.logout() // Gọi action logout từ store để xóa state và localStorage
-    router.push('/login')
+    auth.logout();
+    toast.info("Đã đăng xuất.");
+    router.push('/login');
   }
 }
 
 const fetchHistory = async () => {
-    if (!userInfo.id) return;
+    if (!auth.user?.id) return;
     try {
         const res = await axios.get(`${API_BASE_URL}/api/orders`, { 
-            params: { role: 'driver', userId: userInfo.id } 
+            params: { role: 'driver', userId: auth.user.id } 
         });
-        // Lọc đơn đã giao thành công
         const delivered = res.data.filter(o => o.status === 'delivered');
         myHistory.value = delivered;
-        
-        // Tính tổng thu nhập (Giả sử 20% giá trị đơn)
         totalIncome.value = delivered.reduce((sum, order) => sum + (order.total_price * 0.2), 0);
-    } catch (error) {
-        console.error("Lỗi tải lịch sử:", error);
-    }
+    } catch (error) { console.error(error); }
 }
 
-// ====== CẤU HÌNH SOCKET ======
-const socket = io(SOCKET_URL)
+const fetchDriverStats = async () => {
+    if (!auth.user?.id) return;
+    try {
+        const res = await axios.get(`${API_BASE_URL}/api/drivers/${auth.user.id}/rating`);
+        driverStats.value = {
+            averageRating: Number(res.data.avgRating) || 5,
+            totalReviews: res.data.totalReviews || 0
+        };
+    } catch (e) { console.error(e); }
+};
 
-// Map variables
+// ====== CẤU HÌNH SOCKET & MAP ======
+const socket = io(SOCKET_URL)
 const mapContainer = ref(null)
 let map = null
 let driverMarker = null
 let shopMarkers = []
 let routingControl = null
 
-const toggleSidebar = () => {
-  isSidebarOpen.value = !isSidebarOpen.value
-  // Cập nhật lại kích thước bản đồ sau khi sidebar co lại
-  setTimeout(() => { if(map) map.invalidateSize() }, 300)
-}
-
 const updateRouting = (driverLat, driverLng, destLat, destLng) => {
-  if (!map) return
-  
-  if (routingControl) {
-    map.removeControl(routingControl)
+  try {
+    if (!map || !L.Routing) return;
+    if (routingControl) {
+      map.removeControl(routingControl);
+      routingControl = null;
+    }
+    
+    routingControl = L.Routing.control({
+      waypoints: [L.latLng(driverLat, driverLng), L.latLng(destLat, destLng)],
+      lineOptions: { 
+        styles: [{ color: '#10b981', weight: 6, opacity: 0.8 }] 
+      },
+      addWaypoints: false, 
+      routeWhileDragging: false, 
+      draggableWaypoints: false,
+      fitSelectedRoutes: false, 
+      show: false, 
+      createMarker: () => null
+    }).addTo(map);
+
+    // Xử lý lỗi nếu máy chủ OSRM demo từ chối yêu cầu
+    routingControl.on('routingerror', (e) => {
+      console.warn("Lưu ý: Máy chủ tìm đường OSRM đang bận (Demo Server).");
+    });
+  } catch (err) {
+    console.error("Lỗi khởi tạo chỉ đường:", err);
   }
-
-  routingControl = L.Routing.control({
-    waypoints: [
-      L.latLng(driverLat, driverLng),
-      L.latLng(destLat, destLng)
-    ],
-    lineOptions: {
-      styles: [{ color: '#00b14f', weight: 6, opacity: 0.8 }]
-    },
-    addWaypoints: false,
-    routeWhileDragging: false,
-    draggableWaypoints: false,
-    fitSelectedRoutes: false,
-    show: false,
-    createMarker: () => null
-  }).addTo(map)
 }
 
-const clearShopMarkers = () => {
-  shopMarkers.forEach(m => map.removeLayer(m))
-  shopMarkers = []
-}
+const clearShopMarkers = () => { shopMarkers.forEach(m => map.removeLayer(m)); shopMarkers = []; }
 
 const addShopMarker = (lat, lng, name, image) => {
-  if (!map) return
-  clearShopMarkers()
-  
+  if (!map) return;
+  clearShopMarkers();
   const icon = L.divIcon({
-    html: `<div class="shop-marker-icon"><img src="${image || phoGaImg}" /></div>`,
+    html: `<div class="shop-marker-icon"><img src="${image || ''}" /></div>`,
     className: '', iconSize: [50, 50], iconAnchor: [25, 50]
   });
-
-  const marker = L.marker([lat, lng], { icon }).addTo(map).bindPopup(`<b>${name}</b><br>Điểm lấy hàng`).openPopup();
-  shopMarkers.push(marker)
-  map.setView([lat, lng], 15)
+  const marker = L.marker([lat, lng], { icon }).addTo(map).bindPopup(`<b>${name}</b>`).openPopup();
+  shopMarkers.push(marker);
 }
 
 const updateDriverMarker = (lat, lng) => {
-  if (!map) return
-  const bikeIcon = L.icon({ 
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/3063/3063823.png', 
-    iconSize: [40, 40] 
-  })
-
-  if (driverMarker) {
-    driverMarker.setLatLng([lat, lng])
-  } else {
-    // Chức năng cũ: Tự động định vị khi bật kết nối
-    driverMarker = L.marker([lat, lng], { icon: bikeIcon }).addTo(map).bindPopup("Bạn ở đây").openPopup()
-    map.setView([lat, lng], 16) 
+  if (!map) return;
+  const bikeIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3063/3063823.png', iconSize: [40, 40] });
+  if (driverMarker) driverMarker.setLatLng([lat, lng]);
+  else {
+    driverMarker = L.marker([lat, lng], { icon: bikeIcon }).addTo(map).bindPopup("Bạn").openPopup();
+    map.setView([lat, lng], 16);
   }
 
-  // Cập nhật đường đi ngắn nhất nếu có đơn hàng
-  if (currentOrder.value) {
-    // Nếu chưa lấy hàng, chỉ đường đến quán
-    // Nếu đã lấy hàng, chỉ đường đến khách (cần thêm trạng thái order)
-    const destLat = currentOrder.value.lat_don;
-    const destLng = currentOrder.value.lng_don;
-    if (destLat && destLng) {
-      updateRouting(lat, lng, destLat, destLng);
-    }
+  // Auto routing logic
+  if (isAccepted.value && currentOrder.value) {
+      if (currentOrder.value.status === 'picked_up') {
+          // Giao tới khách
+          updateRouting(lat, lng, currentOrder.value.lat_tra, currentOrder.value.lng_tra);
+      } else {
+          // Đi lấy hàng tại quán
+          updateRouting(lat, lng, currentOrder.value.lat_don, currentOrder.value.lng_don);
+      }
   }
 }
 
 const toggleConnection = () => {
-  isOnline.value = !isOnline.value
-  if (isOnline.value) {
-    socket.emit('join_room', 'drivers')
-    socket.emit('driver_status_change', { status: 'online', driverId: userInfo.id })
-    
-    navigator.geolocation.watchPosition((pos) => {
-      const { latitude, longitude } = pos.coords
-      driverLocation.value = { lat: latitude, lng: longitude }
-      updateDriverMarker(latitude, longitude)
-      
-      socket.emit('update_driver_location', {
-          driverId: userInfo.id,
-          lat: latitude,
-          lng: longitude
-      })
-    }, (err) => {
-        console.error("Lỗi lấy vị trí:", err);
-    }, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 })
-  } else {
-    socket.emit('driver_status_change', { status: 'offline', driverId: userInfo.id })
-    if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
-    clearShopMarkers()
-    currentOrder.value = null
-  }
-}
+  isOnline.value = !isOnline.value;
+  // Notify server about activity
+  socket.emit('driver_active_status', { 
+      userId: auth.user.id, 
+      isActive: isOnline.value,
+      lat: driverLocation.value?.lat,
+      lng: driverLocation.value?.lng
+  });
 
-const initMap = () => {
-  if (map) return;
-  map = L.map(mapContainer.value).setView([21.0499, 105.7405], 14)
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map)
+  if (isOnline.value) {
+    navigator.geolocation.watchPosition((pos) => {
+      const { latitude, longitude } = pos.coords;
+      driverLocation.value = { lat: latitude, lng: longitude };
+      updateDriverMarker(latitude, longitude);
+      socket.emit('update_driver_location', { userId: auth.user.id, lat: latitude, lng: longitude });
+    }, null, { enableHighAccuracy: true });
+  } else {
+    if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
+    if (routingControl) { map.removeControl(routingControl); routingControl = null; }
+    clearShopMarkers();
+    currentOrder.value = null;
+    isAccepted.value = false;
+  }
 }
 
 const acceptOrder = async () => {
     if (!currentOrder.value) return;
-    
     try {
         const orderId = currentOrder.value.orderId || currentOrder.value.id;
-        // 1. Cập nhật trạng thái đơn hàng trên server
         await axios.put(`${API_BASE_URL}/api/orders/${orderId}/status`, { 
             status: 'driver_assigned',
-            driverId: userInfo.id
+            driverId: auth.user.id
         });
-        
-        // 2. Chuyển sang trạng thái đã nhận đơn
         isAccepted.value = true;
-        socket.emit('join_room', `order_${orderId}`); // Tham gia phòng chat của đơn hàng
-        alert("Đã nhận đơn! Vui lòng di chuyển đến quán để lấy hàng.");
-        
-        // 3. Cập nhật chỉ đường: Từ Tài xế -> Quán ăn (lat_don, lng_don)
-        if (driverLocation.value && currentOrder.value.lat_don) {
-            console.log("📍 Vẽ đường tới quán ăn:", currentOrder.value.lat_don, currentOrder.value.lng_don);
-            updateRouting(
-                driverLocation.value.lat,
-                driverLocation.value.lng,
-                Number(currentOrder.value.lat_don),
-                Number(currentOrder.value.lng_don)
-            );
-        }
-
-    } catch (err) {
-        console.error("Lỗi nhận đơn:", err);
-        const errorMsg = err.response?.data?.error || err.message;
-        alert(`Không thể nhận đơn: ${errorMsg}`);
-    }
+        currentOrder.value.status = 'driver_assigned';
+        socket.emit('join_room', `order_${orderId}`);
+        toast.success("Đã nhận đơn! Di chuyển tới quán ăn.");
+        updateRouting(driverLocation.value.lat, driverLocation.value.lng, currentOrder.value.lat_don, currentOrder.value.lng_don);
+    } catch (err) { toast.error("Lỗi nhận đơn: " + err.message); }
 }
 
 const completeOrder = async () => {
     if (!currentOrder.value) return;
-    if(!confirm("Xác nhận đã giao hàng thành công tới khách?")) return;
-
+    if (!confirm("Xác nhận đã giao hàng thành công?")) return;
     try {
         const orderId = currentOrder.value.orderId || currentOrder.value.id;
-        await axios.put(`${API_BASE_URL}/api/orders/${orderId}/status`, { 
-            status: 'delivered',
-            driverId: userInfo.id
-        });
-
-        alert("Giao hàng thành công! Tiền đã cộng vào ví.");
-        
-        // Reset state
+        await axios.put(`${API_BASE_URL}/api/orders/${orderId}/status`, { status: 'delivered' });
+        toast.success("Giao hàng thành công!");
         isAccepted.value = false;
         currentOrder.value = null;
+        if (routingControl) { map.removeControl(routingControl); routingControl = null; }
         clearShopMarkers();
-        if(routingControl){
-            map.removeControl(routingControl);
-            routingControl = null;
-        }
-
-        // Refresh income history
         fetchHistory();
-
-    } catch (err) {
-        console.error("Lỗi hoàn tất đơn:", err);
-        alert("Có lỗi xảy ra khi hoàn tất đơn.");
-    }
+    } catch (err) { toast.error("Lỗi: " + err.message); }
 }
 
-const ignoreOrder = () => {
-    currentOrder.value = null
-    if (routingControl) {
-        map.removeControl(routingControl);
-        routingControl = null;
-    }
-    clearShopMarkers()
-}
+onMounted(() => {
+  if (!auth.user) { router.push('/login'); return; }
+  map = L.map(mapContainer.value).setView([21.0499, 105.7405], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  fetchHistory();
+  fetchDriverStats();
 
-onMounted(() => { 
-  // Kiểm tra đăng nhập ngay khi vào trang
-  if (!localStorage.getItem('user')) {
-    router.push('/login');
-    return;
-  }
+  socket.on('new_order_available', (data) => {
+      if (!isOnline.value || isAccepted.value) return;
+      currentOrder.value = data;
+      addShopMarker(data.lat_don, data.lng_don, data.ten_quan, data.hinh_anh_quan);
+      new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {});
+  });
 
-  initMap() 
-  fetchHistory() // Tải lịch sử ban đầu
-  fetchDriverStats() // Tải đánh giá
-
-  // Lắng nghe cập nhật trạng thái đơn hàng (ví dụ: Shop xác nhận đã lấy hàng)
   socket.on('status_update', (data) => {
-      console.log("Cập nhật trạng thái đơn:", data);
-      if (currentOrder.value && data.orderId == (currentOrder.value.orderId || currentOrder.value.id)) {
-          // Nếu shop xác nhận đã lấy hàng (picked_up), chuyển chỉ đường đến nhà khách
+      if (currentOrder.value && (currentOrder.value.orderId || currentOrder.value.id) == data.orderId) {
+          currentOrder.value.status = data.status;
           if (data.status === 'picked_up') {
-              alert("Quán xác nhận đã lấy hàng! Vui lòng giao đến khách.");
-              // Cập nhật chỉ đường: Từ Tài xế -> Nhà khách (lat_tra, lng_tra)
-              if (driverLocation.value && currentOrder.value.lat_tra) {
-                  updateRouting(
-                      driverLocation.value.lat, 
-                      driverLocation.value.lng, 
-                      currentOrder.value.lat_tra, 
-                      currentOrder.value.lng_tra
-                  );
-              }
+              toast.info("Bạn đã lấy hàng! Di chuyển tới nhà khách.");
+              updateRouting(driverLocation.value.lat, driverLocation.value.lng, currentOrder.value.lat_tra, currentOrder.value.lng_tra);
           }
       }
   });
-
-  socket.on('place_order', (data) => {
-      if (!isOnline.value) return;
-      // Nếu đang có đơn rồi thì không hiện đơn mới (tùy logic app)
-      if (currentOrder.value && currentOrder.value.status !== 'pending') return;
-
-      console.log("Có đơn hàng mới nổ:", data);
-      notificationSound.play().catch(e => console.log("Lỗi phát âm thanh:", e));
-      currentOrder.value = data;
-      
-      if (data.lat_don && data.lng_don) {
-          addShopMarker(data.lat_don, data.lng_don, data.ten_quan, data.hinh_anh_quan);
-      }
-  });
-
-  socket.on('receive_message', (data) => {
-      if (!isChatOpen.value && currentOrder.value && data.orderId == (currentOrder.value.orderId || currentOrder.value.id)) {
-          hasNewMessage.value = true;
-          notificationSound.play().catch(e => console.log("Lỗi phát âm thanh:", e));
-      }
-  });
-})
-onUnmounted(() => { socket.disconnect() })
+});
 </script>
 
 <template>
-  <StandardHeader />
-  <div class="dashboard-container">
-    <main class="main-content">
-      <!-- MAP VIEW -->
-      <div v-show="currentTab === 'home'" class="map-wrapper">
-        <div class="map-background" ref="mapContainer"></div>
-
-        <div class="control-panel-wrapper">
-          <!-- Trạng thái chờ đơn -->
-          <div class="control-panel" v-if="!currentOrder || isAccepted">
-            <div class="status-bar" :class="{ 'online': isOnline }">
-              <div class="status-indicator"></div>
-              <p v-if="!isAccepted">{{ isOnline ? 'Đang tìm đơn hàng...' : 'Bạn đang tắt kết nối' }}</p>
-              <p v-else style="color: #00b14f; font-weight: bold;">ĐANG TRONG ĐƠN HÀNG</p>
-            </div>
-            
-            <div v-if="isAccepted" class="w-full flex gap-2">
-              <button class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 relative" 
-                      @click="isChatOpen = !isChatOpen; hasNewMessage = false">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                CHAT VỚI KHÁCH
-                <span v-if="hasNewMessage" class="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>
-              </button>
-              <button class="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold" @click="completeOrder">
-                HOÀN TẤT ĐƠN
-              </button>
-            </div>
-
-            <button v-else class="toggle-online-btn" @click="toggleConnection" :class="{ 'btn-on': isOnline }">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
-              {{ isOnline ? 'TẮT KẾT NỐI' : 'BẬT KẾT NỐI' }}
-            </button>
-          </div>
-
-          <!-- Chat Overlay for Driver -->
-          <div v-if="isChatOpen && currentOrder" class="mb-4 animate-in slide-in-from-bottom-4 duration-300">
-             <ChatBox 
-               :order-id="currentOrder.orderId || currentOrder.id" 
-               :current-user="auth.user" 
-               @close="isChatOpen = false"
-             />
-          </div>
-
-          <!-- Thông báo đơn hàng mới -->
-          <div class="order-notification-card animate-bounce-in" v-else-if="currentOrder && !isAccepted">
-              <div class="order-header">
-                  <span class="new-label">ĐƠN HÀNG MỚI!</span>
-                  <span class="order-price">{{ currentOrder.tong_tien }}</span>
+  <div class="driver-dashboard-wrapper animate-fade-in">
+    <StandardHeader />
+    <div class="dashboard-container">
+      <main class="main-content">
+        <div v-show="currentTab === 'home'" class="map-wrapper">
+          <div class="map-background" ref="mapContainer"></div>
+          <div class="control-panel-wrapper">
+            <div class="control-panel" v-if="!currentOrder || isAccepted">
+              <div class="status-bar" :class="{ 'online': isOnline }">
+                <div class="status-indicator"></div>
+                <p class="text-xs font-bold uppercase tracking-wider text-gray-500">
+                  {{ isOnline ? (isAccepted ? 'Đang giao hàng' : 'Đang tìm đơn...') : 'Ngoại tuyến' }}
+                </p>
               </div>
-              <div class="order-body">
-                  <div class="shop-info-mini">
-                      <img :src="currentOrder.hinh_anh_quan || phoGaImg" class="mini-shop-img" />
-                      <div>
-                          <h4 class="shop-name-text">{{ currentOrder.ten_quan }}</h4>
-                          <p class="items-text">{{ currentOrder.ten_mon_an }}</p>
-                      </div>
-                  </div>
-                  <div class="distance-info">
-                      <p>📍 {{ currentOrder.dia_chi_giao }}</p>
-                  </div>
-              </div>
-              <div class="order-footer">
-                  <button class="ignore-btn" @click="ignoreOrder">Bỏ qua</button>
-                  <button class="accept-btn" @click="acceptOrder">CHẤP NHẬN</button>
-              </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- INCOME VIEW -->
-      <div v-if="currentTab === 'income'" class="income-view">
-        <div class="income-header">
-            <h2>Tổng Thu Nhập</h2>
-            <p class="income-amount">{{ new Intl.NumberFormat('vi-VN').format(totalIncome) }}đ</p>
-        </div>
-        
-        <div class="history-list">
-            <h3 class="section-title">Lịch sử chuyến đi</h3>
-            <div v-if="myHistory.length === 0" class="no-history">Chưa có chuyến đi nào.</div>
-            <div v-else class="history-item" v-for="h in myHistory" :key="h.id">
-                <div class="history-top">
-                    <span class="date">{{ new Date(h.created_at).toLocaleDateString('vi-VN') }}</span>
-                    <span class="price text-green-600 font-bold">+{{ new Intl.NumberFormat('vi-VN').format(h.total_price * 0.2) }}đ</span>
-                </div>
-                <div class="route-info">
-                    <div class="point from">
-                        <div class="dot green"></div>
-                        <p class="address">{{ h.shop_address || h.shop_name }}</p>
-                    </div>
-                    <div class="line-connect"></div>
-                    <div class="point to">
-                        <div class="dot red"></div>
-                        <p class="address">{{ h.delivery_address }}</p>
-                    </div>
-                </div>
-                <div class="order-meta">
-                    <span>Đơn: #{{ h.id }}</span>
-                    <span>Tổng: {{ new Intl.NumberFormat('vi-VN').format(h.total_price) }}đ</span>
-                </div>
-            </div>
-        </div>
-      </div>
-
-      <!-- PROFILE VIEW -->
-      <div v-if="currentTab === 'profile'" class="profile-view">
-        <div class="profile-card">
-          <div class="profile-header">
-            <div class="avatar-circle-large overflow-hidden border-4 border-green-100 relative group">
-              <img v-if="auth.user?.avatar_url" :src="getAvatarUrl(auth.user.avatar_url)" alt="Avatar" class="w-full h-full object-cover">
-              <svg v-else xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#00b14f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
               
-              <!-- Nút đổi ảnh nhanh -->
-              <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" @click="$refs.fileInput.click()">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+              <div v-if="isAccepted" class="w-full flex gap-3 mt-2">
+                <button class="flex-1 bg-blue-600 text-white py-3 rounded-2xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition" @click="isChatOpen = !isChatOpen">
+                  💬 CHAT
+                </button>
+                <button class="flex-1 bg-green-600 text-white py-3 rounded-2xl font-bold shadow-lg shadow-green-200 active:scale-95 transition" @click="completeOrder">
+                  ✅ HOÀN TẤT
+                </button>
+              </div>
+              <div v-else class="flex justify-center mt-2">
+                <button class="toggle-online-btn-small" @click="toggleConnection" :class="{ 'btn-on': isOnline }">
+                  <span v-if="!isOnline">🔴 Bật hoạt động</span>
+                  <span v-else>🟢 Đang hoạt động</span>
+                </button>
               </div>
             </div>
-            <input type="file" ref="fileInput" @change="handleFileChange" accept="image/*" class="hidden">
-            
-            <h2>{{ auth.user?.full_name || auth.user?.username }}</h2>
-            <p class="role-badge">Tài xế đối tác chuyên nghiệp</p>
-
-            <!-- Driver Rating Stats -->
-            <div class="flex items-center gap-2 mt-3 bg-yellow-50 px-4 py-2 rounded-full border border-yellow-200">
-               <div class="flex text-yellow-500 text-lg">
-                  <span v-for="i in 5" :key="i">{{ i <= Math.round(driverStats.averageRating) ? '⭐' : '☆' }}</span>
-               </div>
-               <span class="text-sm font-bold text-gray-700">
-                  {{ driverStats.averageRating.toFixed(1) }} ({{ driverStats.totalReviews }} đánh giá)
-               </span>
+  
+            <div v-if="isChatOpen && currentOrder" class="mb-4">
+               <ChatBox :order-id="currentOrder.orderId || currentOrder.id" :current-user="auth.user" @close="isChatOpen = false" />
+            </div>
+  
+            <div class="order-notification-card" v-else-if="currentOrder && !isAccepted">
+                <div class="order-header">
+                    <span class="new-label animate-pulse">🔥 ĐƠN MỚI</span>
+                    <span class="order-price">{{ formatPrice(currentOrder.tong_tien) }}</span>
+                </div>
+                <div class="order-body">
+                    <h4 class="font-black text-lg text-gray-800">{{ currentOrder.ten_quan }}</h4>
+                    <p class="text-sm text-gray-600 mt-1 flex items-start gap-1">
+                      <span class="text-red-500">📍</span> {{ currentOrder.dia_chi_giao }}
+                    </p>
+                </div>
+                <div class="order-footer">
+                    <button class="ignore-btn py-3" @click="currentOrder = null">Bỏ qua</button>
+                    <button class="accept-btn py-3 shadow-lg shadow-green-200" @click="acceptOrder">NHẬN ĐƠN</button>
+                </div>
             </div>
           </div>
-          
-          <div class="profile-info-list">
-             <div class="info-item">
-               <span class="label">Số điện thoại:</span>
-               <span class="value">{{ auth.user?.phone || 'Chưa cập nhật' }}</span>
-             </div>
-             <div class="info-item">
-               <span class="label">Email:</span>
-               <span class="value">{{ auth.user?.email || 'Chưa cập nhật' }}</span>
-             </div>
-             <div class="info-item">
-               <span class="label">Phương tiện:</span>
-               <span class="value">{{ auth.user?.vehicle || 'Chưa cập nhật' }}</span>
-             </div>
-             <div class="info-item">
-               <span class="label">Số CCCD:</span>
-               <span class="value">{{ auth.user?.cccd || '**********' }}</span>
-             </div>
+        </div>
+  
+        <div v-if="currentTab === 'income'" class="income-view animate-fade-in">
+            <div class="income-header-card">
+              <p class="text-white/80 text-sm font-medium">Tổng thu nhập (20%)</p>
+              <h2 class="text-4xl font-black text-white mt-1">{{ totalIncome.toLocaleString() }}đ</h2>
+              <div class="grid grid-cols-2 gap-4 mt-6">
+                <div class="bg-white/20 p-3 rounded-2xl backdrop-blur-sm">
+                  <p class="text-white/70 text-[10px] uppercase font-bold">Số đơn</p>
+                  <p class="text-white font-bold text-lg">{{ myHistory.length }}</p>
+                </div>
+                <div class="bg-white/20 p-3 rounded-2xl backdrop-blur-sm">
+                  <p class="text-white/70 text-[10px] uppercase font-bold">Đánh giá</p>
+                  <p class="text-white font-bold text-lg">⭐ {{ driverStats.averageRating.toFixed(1) }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="w-full max-w-md mt-6 px-4">
+              <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <span class="w-1 h-5 bg-green-500 rounded-full"></span> Lịch sử thu nhập
+              </h3>
+              <div v-if="myHistory.length === 0" class="text-center py-10 text-gray-400 italic">
+                Chưa có dữ liệu thu nhập.
+              </div>
+              <div v-for="h in myHistory" :key="h.id" class="income-history-item">
+                  <div class="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-xl">💰</div>
+                  <div class="flex-1">
+                    <p class="font-bold text-gray-800">Đơn hàng #{{ h.id }}</p>
+                    <p class="text-xs text-gray-500">{{ formatDate(h.created_at) }}</p>
+                  </div>
+                  <div class="text-right">
+                    <p class="font-black text-green-600">+{{ (h.total_price * 0.2).toLocaleString() }}đ</p>
+                    <p class="text-[10px] text-gray-400">Hoa hồng 20%</p>
+                  </div>
+              </div>
+            </div>
+        </div>
+  
+        <div v-if="currentTab === 'profile'" class="profile-view animate-fade-in">
+            <div class="profile-header-bg"></div>
+            <div class="profile-card-v2">
+                <div class="relative inline-block mx-auto">
+                  <img :src="getAvatarUrl(auth.user?.avatar_url)" class="w-28 h-28 rounded-3xl object-cover border-4 border-white shadow-xl">
+                  <button @click="fileInput.click()" class="absolute -bottom-2 -right-2 bg-green-500 text-white p-2 rounded-xl shadow-lg hover:bg-green-600 transition">
+                    📷
+                  </button>
+                  <input type="file" ref="fileInput" @change="handleFileChange" hidden accept="image/*">
+                </div>
+                
+                <h2 class="text-2xl font-black text-gray-800 mt-4">{{ auth.user?.full_name || auth.user?.username }}</h2>
+                <p class="text-green-600 font-bold text-sm">Tài xế đối tác GHTN</p>
+
+                <div class="flex justify-center gap-6 my-6 border-y border-gray-50 py-4">
+                  <div class="text-center">
+                    <p class="text-2xl font-black text-gray-800">{{ driverStats.averageRating.toFixed(1) }}</p>
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">Sao</p>
+                  </div>
+                  <div class="text-center">
+                    <p class="text-2xl font-black text-gray-800">{{ driverStats.totalReviews }}</p>
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">Đánh giá</p>
+                  </div>
+                  <div class="text-center">
+                    <p class="text-2xl font-black text-gray-800">{{ myHistory.length }}</p>
+                    <p class="text-[10px] text-gray-400 font-bold uppercase">Chuyến</p>
+                  </div>
+                </div>
+
+                <div class="space-y-3 w-full">
+                  <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                    <span class="text-xl">📞</span>
+                    <div class="text-left">
+                      <p class="text-[10px] text-gray-400 font-bold uppercase">Số điện thoại</p>
+                      <p class="font-bold text-gray-700">{{ auth.user?.phone || 'Chưa cập nhật' }}</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                    <span class="text-xl">📧</span>
+                    <div class="text-left">
+                      <p class="text-[10px] text-gray-400 font-bold uppercase">Email</p>
+                      <p class="font-bold text-gray-700">{{ auth.user?.email || 'Chưa cập nhật' }}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <button class="w-full mt-8 py-4 bg-red-50 text-red-600 rounded-2xl font-black hover:bg-red-100 transition active:scale-95" @click="handleLogout">
+                  ĐĂNG XUẤT TÀI KHOẢN
+                </button>
+            </div>
+        </div>
+  
+        <nav class="bottom-nav">
+          <div class="nav-item" :class="{active: currentTab==='home'}" @click="currentTab='home'">
+            <span>TRANG CHỦ</span>
           </div>
-
-           <button class="driver-logout-btn" @click="handleLogout">
-             ĐĂNG XUẤT TÀI KHOẢN
-           </button>
-        </div>
-      </div>
-
-      <!-- OTHER VIEWS -->
-      <div v-if="currentTab === 'inbox'" class="placeholder-view">
-         <h2>Hộp thư</h2>
-         <p>Chưa có thông báo nào.</p>
-      </div>
-
-      <!-- BOTTOM NAVIGATION -->
-      <nav class="bottom-nav">
-        <div :class="['nav-item', { active: currentTab === 'home' }]" @click="currentTab = 'home'">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-          <span>Trang chủ</span>
-        </div>
-        <div :class="['nav-item', { active: currentTab === 'income' }]" @click="currentTab = 'income'">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
-          <span>Thu nhập</span>
-        </div>
-        <div :class="['nav-item', { active: currentTab === 'inbox' }]" @click="currentTab = 'inbox'">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-          <span>Hộp thư</span>
-        </div>
-        <div :class="['nav-item', { active: currentTab === 'profile' }]" @click="currentTab = 'profile'">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-          <span>Hồ sơ</span>
-        </div>
-      </nav>
-    </main>
+          <div class="nav-item" :class="{active: currentTab==='income'}" @click="currentTab='income'">
+            <span>THU NHẬP</span>
+          </div>
+          <div class="nav-item" :class="{active: currentTab==='profile'}" @click="currentTab='profile'">
+            <span>HỒ SƠ</span>
+          </div>
+        </nav>
+      </main>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.dashboard-container { display: flex; height: calc(100vh - 80px); width: 100%; overflow: hidden; background: #f4f6f8; }
+.dashboard-container { height: calc(100vh - 80px); background: #f8fafc; position: relative; overflow: hidden; }
+.main-content { height: 100%; position: relative; }
+.map-wrapper { height: 100%; width: 100%; }
+.map-background { height: 100%; width: 100%; z-index: 1; }
 
-/* Main Content */
-.main-content { 
-  flex: 1; 
-  position: relative; 
-  height: 100%; 
+/* Control Panel & Buttons */
+.control-panel-wrapper { position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); width: 92%; z-index: 1000; }
+.control-panel { background: white; padding: 16px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; border: 1px solid rgba(0,0,0,0.05); }
+.status-bar { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 4px; }
+.status-indicator { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; transition: 0.3s; }
+.online .status-indicator { background: #10b981; box-shadow: 0 0 12px #10b981; animation: pulse 2s infinite; }
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+.toggle-online-btn-small { padding: 10px 24px; border-radius: 50px; background: #1e293b; color: white; font-weight: 800; font-size: 14px; transition: 0.3s; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.toggle-online-btn-small.btn-on { background: #10b981; }
+.toggle-online-btn-small:active { transform: scale(0.95); }
+
+/* Order Card */
+.order-notification-card { background: white; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.2); border: 2px solid #10b981; animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+@keyframes slideUp { from { transform: translateY(100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.order-header { background: #10b981; color: white; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
+.new-label { background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 900; }
+.order-price { font-size: 20px; font-weight: 900; }
+.order-body { padding: 20px; }
+.order-footer { display: flex; gap: 12px; padding: 0 20px 20px; }
+.accept-btn { flex: 2; background: #10b981; color: white; border-radius: 16px; font-weight: 800; transition: 0.2s; }
+.ignore-btn { flex: 1; background: #f1f5f9; color: #64748b; border-radius: 16px; font-weight: 700; transition: 0.2s; }
+
+/* Income View */
+.income-view { padding: 20px 0 100px; width: 100%; height: 100%; overflow-y: auto; background: #fff; }
+.income-header-card { background: linear-gradient(135deg, #10b981 0%, #059669 100%); width: 92%; margin: 0 auto; padding: 30px 24px; border-radius: 32px; shadow: 0 15px 30px rgba(16, 185, 129, 0.3); }
+.income-history-item { display: flex; align-items: center; gap: 16px; padding: 16px; background: #f8fafc; border-radius: 20px; margin-bottom: 12px; border: 1px solid #f1f5f9; transition: 0.2s; }
+.income-history-item:active { transform: scale(0.98); background: #f1f5f9; }
+
+/* Profile View */
+.profile-view { position: relative; height: 100%; width: 100%; overflow-y: auto; background: #fff; padding-bottom: 100px; }
+.profile-header-bg { height: 160px; background: linear-gradient(to bottom, #10b981, #fff); width: 100%; }
+.profile-card-v2 { width: 92%; margin: -80px auto 0; background: white; border-radius: 32px; padding: 30px 24px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.05); position: relative; z-index: 2; border: 1px solid #f1f5f9; }
+
+/* Bottom Nav */
+.bottom-nav { 
+  position: absolute; 
+  bottom: 0; 
   width: 100%; 
-  display: flex; 
-  flex-direction: column;
-  overflow: hidden;
-  padding-bottom: 70px; /* Chừa chỗ cho bottom nav */
-}
-
-/* Bottom Navigation */
-.bottom-nav {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 70px;
-  background: white;
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  border-top: 1px solid #eee;
-  box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
-  z-index: 1000;
-}
-
-.nav-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  color: #888;
-  cursor: pointer;
-  transition: 0.2s;
-  flex: 1;
-}
-
-.nav-item span {
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.nav-item svg {
-  width: 22px;
-  height: 22px;
-}
-
-.nav-item.active {
-  color: #00b14f;
-}
-
-.nav-item:active {
-  transform: scale(0.9);
-}
-
-.map-wrapper { width: 100%; height: 100%; position: relative; flex: 1; }
-.map-background { width: 100%; height: 100%; z-index: 1; }
-
-/* Control Panel */
-.control-panel-wrapper {
-  position: absolute;
-  bottom: 30px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 90%;
-  max-width: 450px;
-  z-index: 500; 
-}
-
-.control-panel { 
+  height: 70px; 
   background: white; 
-  padding: 20px; 
-  border-radius: 20px; 
-  box-shadow: 0 10px 30px rgba(0,0,0,0.15); 
   display: flex; 
-  flex-direction: column; 
+  border-top: 1px solid #f1f5f9; 
+  z-index: 1001; 
+  padding: 8px 12px;
+  gap: 10px;
+}
+.nav-item { 
+  flex: 1; 
+  display: flex; 
   align-items: center; 
-  gap: 15px; 
+  justify-content: center; 
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+.nav-item span { 
+  font-size: 13px; 
+  font-weight: 900; 
+  color: #64748b; 
+  letter-spacing: 0.5px;
+}
+.nav-item.active { 
+  background: #10b981; 
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+}
+.nav-item.active span { 
+  color: white; 
+  transform: scale(1.05);
 }
 
-.status-indicator { width: 12px; height: 12px; background: red; border-radius: 50%; margin-right: 10px; }
-.status-bar { display: flex; align-items: center; font-weight: 500; color: #666; }
-.online .status-indicator { background: #00b14f; box-shadow: 0 0 10px #00b14f; }
-
-.toggle-online-btn { 
-  background: #1c1c1c; color: white; border: none; padding: 12px 60px; 
-  border-radius: 50px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 10px;
-  transition: 0.3s;
-}
-.toggle-online-btn.btn-on { background: #00b14f; }
-
-.quick-actions { display: flex; gap: 50px; border-top: 1px solid #eee; padding-top: 15px; width: 100%; justify-content: center; }
-.circle-icon { width: 45px; height: 45px; background: #f5f5f5; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-.action-item { display: flex; flex-direction: column; align-items: center; font-size: 11px; gap: 5px; color: #666; }
-
-/* Shop Marker */
-:deep(.shop-marker-icon) { 
-  width: 45px; height: 45px; border-radius: 50%; border: 3px solid #00b14f; 
-  background: white; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.2); 
-}
+:deep(.shop-marker-icon) { width: 48px; height: 48px; border-radius: 50%; border: 4px solid white; background: white; overflow: hidden; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
 :deep(.shop-marker-icon img) { width: 100%; height: 100%; object-fit: cover; }
 
-/* Order Notification Card */
-.order-notification-card {
-  background: white;
-  padding: 0;
-  border-radius: 20px;
-  box-shadow: 0 15px 40px rgba(0,0,0,0.2);
-  width: 100%;
-  overflow: hidden;
-  border: 2px solid #00b14f;
-}
-
-.order-header {
-  background: #00b14f;
-  padding: 12px 20px;
-  color: white;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.new-label { font-weight: 800; font-size: 14px; letter-spacing: 1px; }
-.order-price { font-size: 18px; font-weight: 800; }
-
-.order-body { padding: 20px; }
-.shop-info-mini { display: flex; gap: 15px; align-items: center; margin-bottom: 15px; }
-.mini-shop-img { width: 50px; height: 50px; border-radius: 10px; object-fit: cover; }
-.shop-name-text { font-weight: 700; color: #333; margin: 0; }
-.items-text { font-size: 13px; color: #666; margin: 2px 0 0; }
-
-.distance-info { 
-  background: #f9f9f9; 
-  padding: 10px; 
-  border-radius: 10px; 
-  font-size: 13px; 
-  color: #333;
-  border-left: 4px solid #00b14f;
-}
-
-.order-footer { display: flex; gap: 10px; padding: 0 20px 20px; }
-.ignore-btn { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 10px; font-weight: 600; cursor: pointer; color: #666; }
-.accept-btn { flex: 2; padding: 12px; background: #00b14f; color: white; border: none; border-radius: 10px; font-weight: 800; cursor: pointer; }
-
-@keyframes bounceIn {
-  0% { opacity: 0; transform: scale(0.3); }
-  50% { opacity: 1; transform: scale(1.05); }
-  70% { transform: scale(0.9); }
-  100% { transform: scale(1); }
-}
-.animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-
-/* Profile View & Income View */
-.profile-view, .placeholder-view, .income-view {
-  flex: 1;
-  background: #f4f6f8;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  overflow-y: auto;
-}
-
-/* INCOME Styles */
-.income-header {
-    background: #00b14f;
-    width: 100%;
-    max-width: 500px;
-    border-radius: 15px;
-    padding: 30px;
-    color: white;
-    text-align: center;
-    box-shadow: 0 4px 15px rgba(0,177,79, 0.3);
-    margin-bottom: 25px;
-}
-.income-header h2 { margin: 0; font-size: 16px; opacity: 0.9; }
-.income-amount { font-size: 32px; font-weight: 800; margin: 10px 0 0; }
-
-.history-list {
-    width: 100%;
-    max-width: 500px;
-}
-.section-title { font-size: 16px; font-weight: 700; color: #333; margin-bottom: 15px; }
-.no-history { text-align: center; color: #888; padding: 20px; }
-
-.history-item {
-    background: white;
-    border-radius: 12px;
-    padding: 15px;
-    margin-bottom: 15px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-}
-.history-top { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; color: #555; }
-.route-info {
-    position: relative;
-    padding-left: 20px;
-    border-left: 2px dashed #ddd;
-    margin-left: 5px;
-}
-.point { position: relative; margin-bottom: 10px; }
-.point .dot { 
-    position: absolute; left: -26px; top: 4px; 
-    width: 10px; height: 10px; border-radius: 50%; 
-}
-.dot.green { background: #00b14f; }
-.dot.red { background: #ff4757; }
-.address { font-size: 14px; font-weight: 600; color: #333; margin: 0; }
-.order-meta { 
-    margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; 
-    display: flex; justify-content: space-between; font-size: 12px; color: #888; 
-}
-
-
-.profile-card {
-  background: white;
-  width: 100%;
-  max-width: 500px;
-  border-radius: 15px;
-  padding: 30px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-top: 10px;
-}
-
-.avatar-circle-large {
-
-  width: 120px;
-
-  height: 120px;
-
-  background: #e8f5e9;
-
-  border-radius: 50%;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: center;
-
-  margin: 0 auto 15px auto;
-
-  transition: all 0.3s ease;
-
-}
-
-
-
-.profile-header { text-align: center; margin-bottom: 30px; }
-
-.profile-header h2 { margin: 10px 0 5px; color: #333; font-weight: 800; }
-
-.role-badge { background: #00b14f; color: white; padding: 4px 16px; border-radius: 20px; font-size: 0.75rem; display: inline-block; font-weight: bold; }
-
-
-
-.profile-info-list { width: 100%; display: flex; flex-direction: column; gap: 12px; }
-
-.info-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
-
-.info-item .label { color: #777; font-weight: 500; font-size: 14px; }
-
-.info-item .value { color: #333; font-weight: 700; font-size: 14px; }
-
-
-
-.driver-logout-btn {
-
-  margin-top: 40px;
-
-  background: #fff;
-
-  border: 2px solid #ff4d4f;
-
-  color: #ff4d4f;
-
-  width: 100%;
-
-  padding: 14px;
-
-  border-radius: 12px;
-
-  cursor: pointer;
-
-  font-weight: 800;
-
-  font-size: 14px;
-
-  transition: all 0.2s;
-
-  letter-spacing: 1px;
-
-}
-
-.driver-logout-btn:hover { background: #ff4d4f; color: white; box-shadow: 0 4px 12px rgba(255, 77, 79, 0.2); }
-
+.animate-fade-in { animation: fadeIn 0.3s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>

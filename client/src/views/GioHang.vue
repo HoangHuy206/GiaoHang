@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+  <div class="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-lg animate-fade-in">
     <h2 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-4">Giỏ Hàng Của Bạn</h2>
 
     <div v-if="cart.items.length === 0" class="text-center py-10 text-gray-500">
@@ -35,12 +35,14 @@
 <script setup>
 import { useCartStore } from '../stores/cart';
 import { useAuthStore } from '../stores/auth';
+import { useToastStore } from '../stores/toast';
 import { ref } from 'vue';
 import axios from 'axios';
 import { useRouter } from 'vue-router';
 
 const cart = useCartStore();
 const auth = useAuthStore();
+const toast = useToastStore();
 const router = useRouter();
 
 const formatPrice = (price) => {
@@ -50,7 +52,7 @@ const formatPrice = (price) => {
 const placeOrder = async () => {
     // Only check if cart is empty
     if (cart.items.length === 0) {
-        alert("Giỏ hàng trống!");
+        toast.warning("Giỏ hàng trống!");
         return;
     }
 

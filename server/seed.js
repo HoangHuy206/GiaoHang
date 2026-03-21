@@ -106,7 +106,17 @@ async function seed() {
       else if (n.includes('cơm')) keyword = 'rice,restaurant';
       else if (n.includes('tocotoco') || n.includes('mixue')) keyword = 'drink,dessert';
       
-      const shopImageUrl = `https://loremflickr.com/640/480/${keyword}?lock=${Math.floor(Math.random() * 1000)}`;
+      const shopImageMap = {
+          'Phở gà Anh Thư': '/uploads/pho-ga-anh-thu.png',
+          'Lotteria - Vincom Smart City': '/uploads/lotte.jpg',
+          'Cơm bình dân': '/uploads/comngon.jpg',
+          'Cơm gà hầm': '/uploads/gaham.jpg',
+          'Tocotoco': '/uploads/toco.jpg',
+          'Bún chấm': '/uploads/buncham.jpg',
+          'Mixue': '/uploads/mixue.jpg'
+      };
+
+      const shopImageUrl = shopImageMap[shopData.name] || `https://loremflickr.com/640/480/${keyword}?lock=${Math.floor(Math.random() * 1000)}`;
       
       // Random coordinates around 21.0464, 105.7480 (approx 5km range)
       const lat = 21.0464 + (Math.random() - 0.5) * 0.05;
@@ -156,7 +166,52 @@ async function seed() {
               else if (n.includes('bún') || n.includes('phở') || n.includes('mỳ')) keyword = 'noodle';
               else if (n.includes('burger')) keyword = 'burger';
               
-              const imageUrl = `https://loremflickr.com/320/240/${keyword}?lock=${Math.floor(Math.random() * 10000)}`;
+              const productImageMap = {
+                  'Cơm rang dưa bò': '/uploads/comrangduabo.webp',
+                  'Cơm rang đùi gà': '/uploads/comrangduiga.webp',
+                  'Cơm rang hải sản': '/uploads/comranghaisan.webp',
+                  'Cơm rang thập cẩm': '/uploads/comrangthapcam.webp',
+                  'Burger Bulgogi': '/uploads/Burger_Bulgogi.webp',
+                  'Burger tôm': '/uploads/Burger_Tom.webp',
+                  'Gà Rán Phần': '/uploads/garanphan.webp',
+                  'Gà sốt dâu 3 miếng': '/uploads/gasotdau3mieng.webp',
+                  'Gà sốt phô mai 3 miếng': '/uploads/gasotphomai3mieng.webp',
+                  'Mỳ': '/uploads/myy.webp',
+                  'Bơ xào': '/uploads/boxao.png',
+                  'Cocacola': '/uploads/coca.png',
+                  'Cơm thố bơ': '/uploads/comthobo.png',
+                  'Cơm thố đặc biệt': '/uploads/comthodacbiet.png',
+                  'Cơm thố dương châu': '/uploads/comthoduongchau.png',
+                  'Cơm thố sườn nướng': '/uploads/comthosuonnuong.png',
+                  'Cơm thố gà quay': '/uploads/comthogaquay.png',
+                  'Cơm thố gà': '/uploads/comthoga.png',
+                  'Gà nướng': '/uploads/ganuong.png',
+                  'Gà hầm thuốc bắc': '/uploads/gahamthuoc.jpg',
+                  'Gà hầm thập cẩm': '/uploads/gahamthapcam.jpg',
+                  'Gà đóng hộp': '/uploads/gadonghop.jpg',
+                  'Gà hầm sâm': '/uploads/gahamxam.jpg',
+                  'Gà hầm ngải cứu': '/uploads/gahamngaicuu.jpg',
+                  'Gà hầm hạt sen': '/uploads/gahamhatsen.jpg',
+                  'Hồng trà kem phô mai': '/uploads/hongtrakemphomaisizeM.webp',
+                  'Ô long kem phô mai': '/uploads/olongkemphomaisizeM.webp',
+                  'Trà xanh kem phô mai': '/uploads/traxanhkemphomaisizeM.webp',
+                  'Hồng trà khổng lồ': '/uploads/hongtramanquehoakhonglo.webp',
+                  'Trà trân châu khổng lồ': '/uploads/suatuoichantrauduonghokhonglo.webp',
+                  'Trà sữa dâu tây': '/uploads/trasuadaytaysizeM.webp',
+                  'Bánh cuốn chả nướng': '/uploads/banhcuonchanuong.webp',
+                  'Bánh cuốn chả quế': '/uploads/banhcuonchaque.webp',
+                  'Bún chả chấm': '/uploads/bunchacham.webp',
+                  'Bánh cuốn trứng': '/uploads/banhcuontrung.webp',
+                  'Bún bò huế': '/uploads/bunbohue.jpg',
+                  'Super sundae xoài': '/uploads/Super_sundae_xoai.webp',
+                  'Super sundae dâu tây': '/uploads/Supersundae_dautay.webp',
+                  'Super sundae socola': '/uploads/Supersundaesocola.webp',
+                  'Trà bí đao': '/uploads/tradaobigsize.webp',
+                  'Trà ô long kiwi': '/uploads/traolongkiwi.webp',
+                  'Dương chi cam lộ': '/uploads/duongchicamlo.webp'
+              };
+
+              const imageUrl = productImageMap[item.name] || `https://loremflickr.com/320/240/${keyword}?lock=${Math.floor(Math.random() * 10000)}`;
 
               await connection.query(
                   'INSERT INTO products (shop_id, name, price, image_url) VALUES (?, ?, ?, ?)',

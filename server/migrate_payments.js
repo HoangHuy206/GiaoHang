@@ -1,39 +1,40 @@
 const pool = require('./db');
 
-async function migrate() {
+async function addColumnIfNotExists(table, column, definition) {
   try {
-    console.log('Adding bank columns to shops table...');
-    await pool.execute('ALTER TABLE shops ADD COLUMN bank_code VARCHAR(50)');
-    await pool.execute('ALTER TABLE shops ADD COLUMN bank_account VARCHAR(50)');
-    await pool.execute('ALTER TABLE shops ADD COLUMN bank_name VARCHAR(255)');
+    await pool.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    console.log(`✅ Đã thêm cột [${column}] vào bảng [${table}]`);
   } catch (err) {
-    if (err.code === 'ER_DUP_COLUMN_NAME') {
-      console.log('Columns already exist in shops table.');
+    if (err.code === 'ER_DUP_FIELDNAME' || err.code === 'ER_DUP_COLUMN_NAME') {
+      console.log(`ℹ️ Cột [${column}] đã tồn tại trong bảng [${table}], bỏ qua.`);
     } else {
-      throw err;
+      console.error(`❌ Lỗi khi thêm cột [${column}]:`, err.message);
     }
   }
-
-  try {
-    console.log('Adding payment columns to orders table...');
-    await pool.execute('ALTER TABLE orders ADD COLUMN payment_status ENUM(\'unpaid\', \'paid\', \'refunded\') DEFAULT \'unpaid\'');
-    await pool.execute('ALTER TABLE orders ADD COLUMN paid_at TIMESTAMP NULL');
-    await pool.execute('ALTER TABLE orders ADD COLUMN customer_bank_code VARCHAR(50)');
-    await pool.execute('ALTER TABLE orders ADD COLUMN customer_bank_account VARCHAR(50)');
-    await pool.execute('ALTER TABLE orders ADD COLUMN customer_bank_name VARCHAR(255)');
-  } catch (err) {
-    if (err.code === 'ER_DUP_COLUMN_NAME') {
-      console.log('Columns already exist in orders table.');
-    } else {
-      throw err;
-    }
-  }
-
-  console.log('Migration completed.');
-  process.exit(0);
 }
 
-migrate().catch(err => {
-  console.error('Migration failed:', err);
-  process.exit(1);
-});
+async function migrate() {
+  try {
+    console.log('--- Bắt đầu nâng cấp cấu trúc Database ---');
+
+    // Nâng cấp bảng shops
+    await addColumnIfNotExists('shops', 'bank_code', 'VARCHAR(50)');
+    await addColumnIfNotExists('shops', 'bank_account', 'VARCHAR(50)');
+    await addColumnIfNotExists('shops', 'bank_name', 'VARCHAR(255)');
+
+    // Nâng cấp bảng orders
+    await addColumnIfNotExists('orders', 'payment_status', "ENUM('unpaid', 'paid', 'refunded') DEFAULT 'unpaid'");
+    await addColumnIfNotExists('orders', 'paid_at', 'TIMESTAMP NULL');
+    await addColumnIfNotExists('orders', 'customer_bank_code', 'VARCHAR(50)');
+    await addColumnIfNotExists('orders', 'customer_bank_account', 'VARCHAR(50)');
+    await addColumnIfNotExists('orders', 'customer_bank_name', 'VARCHAR(255)');
+
+    console.log('--- Hoàn thành nâng cấp! ---');
+    process.exit(0);
+  } catch (err) {
+    console.error('❌ Migration thất bại:', err);
+    process.exit(1);
+  }
+}
+
+migrate();

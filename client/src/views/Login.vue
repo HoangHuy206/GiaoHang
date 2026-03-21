@@ -1,5 +1,5 @@
 <template>
-  <div class="login-page">
+  <div class="login-page animate-fade-in">
     <div class="container">
       
       <div class="left-side">
@@ -98,11 +98,13 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import { useToastStore } from '../stores/toast';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import shipperImgSource from '@/assets/img/anh.logo/anhbiadangnhap1.png';
 
 const auth = useAuthStore();
+const toast = useToastStore();
 const router = useRouter();
 const username = ref('');
 const password = ref('');
@@ -127,35 +129,35 @@ const closeForgotModal = () => {
 };
 
 const handleSendCode = async () => {
-  if (!forgotEmail.value) return alert("Vui lòng nhập email!");
+  if (!forgotEmail.value) return toast.warning("Vui lòng nhập email!");
   forgotLoading.value = true;
   try {
     const res = await axios.post(`${API_BASE_URL}/api/forgot-password`, { email: forgotEmail.value });
-    alert(res.data.message);
+    toast.success(res.data.message);
     forgotStep.value = 2;
   } catch (err) {
-    alert(err.response?.data?.error || "Lỗi gửi mã!");
+    toast.error(err.response?.data?.error || "Lỗi gửi mã!");
   } finally {
     forgotLoading.value = false;
   }
 };
 
 const handleVerifyCode = async () => {
-  if (forgotCode.value.length !== 6) return alert("Mã xác thực phải có 6 số!");
+  if (forgotCode.value.length !== 6) return toast.warning("Mã xác thực phải có 6 số!");
   forgotLoading.value = true;
   try {
     await axios.post(`${API_BASE_URL}/api/verify-code`, { email: forgotEmail.value, code: forgotCode.value });
     forgotStep.value = 3;
   } catch (err) {
-    alert(err.response?.data?.error || "Mã không đúng hoặc hết hạn!");
+    toast.error(err.response?.data?.error || "Mã không đúng hoặc hết hạn!");
   } finally {
     forgotLoading.value = false;
   }
 };
 
 const handleResetPassword = async () => {
-  if (newPassword.value.length < 6) return alert("Mật khẩu phải từ 6 ký tự!");
-  if (newPassword.value !== confirmPassword.value) return alert("Mật khẩu xác nhận không khớp!");
+  if (newPassword.value.length < 6) return toast.warning("Mật khẩu phải từ 6 ký tự!");
+  if (newPassword.value !== confirmPassword.value) return toast.warning("Mật khẩu xác nhận không khớp!");
   
   forgotLoading.value = true;
   try {
@@ -164,10 +166,10 @@ const handleResetPassword = async () => {
       code: forgotCode.value,
       newPassword: newPassword.value
     });
-    alert(res.data.message);
+    toast.success(res.data.message);
     closeForgotModal();
   } catch (err) {
-    alert(err.response?.data?.error || "Lỗi đổi mật khẩu!");
+    toast.error(err.response?.data?.error || "Lỗi đổi mật khẩu!");
   } finally {
     forgotLoading.value = false;
   }
@@ -178,7 +180,7 @@ const shipperImg = ref(shipperImgSource);
 
 const handleLogin = async () => {
   if (!username.value || !password.value) {
-    alert("Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu!");
+    toast.warning("Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu!");
     return;
   }
 
@@ -188,21 +190,21 @@ const handleLogin = async () => {
     
     // Phân quyền điều hướng dựa trên logic dự án hiện tại
     if (auth.user.role === 'admin') {
-      alert(`Xin chào Admin ${auth.user.full_name || auth.user.username}!`);
+      toast.success(`Xin chào Admin ${auth.user.full_name || auth.user.username}!`);
       router.push('/admin');
     } else if (auth.user.role === 'driver') {
-      alert(`Xin chào Tài xế ${auth.user.full_name || auth.user.username}!`);
+      toast.success(`Xin chào Tài xế ${auth.user.full_name || auth.user.username}!`);
       router.push('/trangchutaixe'); 
     } else if (auth.user.role === 'shop') {
-      alert(`Chào mừng chủ shop ${auth.user.full_name || auth.user.username}!`);
+      toast.success(`Chào mừng chủ shop ${auth.user.full_name || auth.user.username}!`);
       router.push('/shop-admin');
     } else {
-      alert(`Chào mừng ${auth.user.full_name || auth.user.username} quay trở lại!`);
+      toast.success(`Chào mừng ${auth.user.full_name || auth.user.username} quay trở lại!`);
       router.push('/food');
     }
   } catch (error) {
     console.error("Lỗi đăng nhập:", error);
-    alert(error || "Sai tài khoản hoặc mật khẩu!");
+    toast.error(error || "Sai tài khoản hoặc mật khẩu!");
   } finally {
     loading.value = false;
   }

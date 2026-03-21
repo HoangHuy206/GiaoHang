@@ -4,20 +4,25 @@ import { RouterLink } from 'vue-router'
 import axios from 'axios' 
 import StandardHeader from '../components/StandardHeader.vue'
 import { API_BASE_URL } from '../config'
+import { useToastStore } from '../stores/toast'
 
+const toast = useToastStore()
 const getImageUrl = (url) => {
     if (!url) return new URL('@/assets/img/anhND/anhdaidienmacdinh.jpg', import.meta.url).href;
     
-    // Danh sách các ảnh gốc trong thư mục anhND
-    const assetImages = ['comngon.jpg', 'lotte.jpg', 'comtho.jpg', 'gaham.jpg', 'toco.jpg', 'buncham.jpg', 'mixue.jpg', 'anhdaidienmacdinh.jpg'];
-    
-    // Lấy tên file nguyên bản (loại bỏ đường dẫn nếu có)
+    // Lấy tên file nguyên bản
     const fileName = url.split('/').pop();
 
-    if (assetImages.includes(fileName)) {
-        // Nếu là ảnh trong assets, dùng URL động của Vite
-        // Lưu ý: Phải viết đường dẫn tường minh để Vite nhận diện được lúc build
+    // Danh sách ảnh trong thư mục anhND
+    const ndImages = ['comngon.jpg', 'lotte.jpg', 'comtho.jpg', 'gaham.jpg', 'toco.jpg', 'buncham.jpg', 'mixue.jpg', 'anhdaidienmacdinh.jpg'];
+    if (ndImages.includes(fileName)) {
         return new URL(`../assets/img/anhND/${fileName}`, import.meta.url).href;
+    }
+
+    // Danh sách ảnh trong thư mục anhquanan
+    const quanImages = ['pho-ga-anh-thu.png'];
+    if (quanImages.includes(fileName)) {
+        return new URL(`../assets/img/anhquanan/${fileName}`, import.meta.url).href;
     }
 
     if (url.startsWith('http')) return url;
@@ -94,6 +99,8 @@ let timer = null
 
 // --- DANH SÁCH NHÀ HÀNG (Sẽ được load từ API) ---
 const restaurants = ref([])
+const isLoading = ref(true)
+const fetchError = ref(null)
 
 const allProducts = ref([])
 
@@ -104,48 +111,73 @@ const getCurrentUser = () => {
     return null;
 }
 
-onMounted(async () => {
-  timer = setInterval(nextSlide, 4000)
+const fetchData = async () => {
+  isLoading.value = true;
+  fetchError.value = null;
+  console.log("Đang tải dữ liệu từ:", API_BASE_URL);
   
   try {
       // 1. Fetch real shops from API
       const shopsRes = await axios.get(`${API_BASE_URL}/api/shops`);
+      console.log("Danh sách shop nhận được:", shopsRes.data);
+      
       // Map API data to match the UI format
       restaurants.value = shopsRes.data.map(s => ({
           id: s.id,
           name: s.name,
-          type: "Quán ăn", // Default type since API doesn't have it yet
+          type: "Quán ăn", 
           rating: 4.9, 
           time: "30-40 phút",
           distance: "2.5 km",
           promo: "Giảm 10%",
-          image: s.image_url, // API image_url
+          image: s.image_url, 
           isFavorite: false
       }));
 
       // 2. Fetch all products for search
-      const prodRes = await axios.get(`${API_BASE_URL}/api/products`);
-      allProducts.value = prodRes.data;
+      try {
+          const prodRes = await axios.get(`${API_BASE_URL}/api/products`);
+          allProducts.value = prodRes.data;
+      } catch (e) {
+          console.warn("Không thể tải danh sách món ăn:", e.message);
+      }
+
+      // 3. Đồng bộ trạng thái yêu thích
+      if (auth.user && auth.user.id) {
+          try {
+              const res = await axios.get(`${API_BASE_URL}/api/like/${auth.user.id}`); 
+              console.log("Favorite list from server:", res.data);
+              const likedList = Array.isArray(res.data) ? res.data : []; 
+              
+              // Tạo một Set chứa ID của các shop đã thích để tìm kiếm nhanh hơn
+              const likedShopIds = new Set(likedList.map(item => item.id || item.shop_id));
+              
+              restaurants.value.forEach(r => {
+                  if (likedShopIds.has(r.id)) {
+                      console.log(`Shop ${r.id} (${r.name}) is in favorites.`);
+                      r.isFavorite = true;
+                  } else {
+                      r.isFavorite = false;
+                  }
+              });
+          } catch (e) {
+              console.error("Lỗi tải danh sách yêu thích:", e);
+          }
+      } else {
+          // Nếu chưa đăng nhập, đảm bảo tất cả là false
+          restaurants.value.forEach(r => r.isFavorite = false);
+      }
   } catch (error) {
       console.error("Lỗi tải dữ liệu hệ thống:", error);
+      fetchError.value = "Không thể kết nối tới máy chủ. Vui lòng thử lại.";
+  } finally {
+      isLoading.value = false;
   }
+};
 
-  // --- LOGIC MỚI: ĐỒNG BỘ TRÁI TIM TỪ DATABASE ---
-  const currentUser = getCurrentUser();
-  if (currentUser && currentUser.id) {
-      try {
-          const res = await axios.get(`${API_BASE_URL}/api/like/${currentUser.id}`); 
-          const likedList = Array.isArray(res.data) ? res.data : []; 
-
-          restaurants.value.forEach(r => {
-              // Kiểm tra shop_id từ bảng favorites
-              const isLiked = likedList.some(dbItem => dbItem.shop_id === r.id);
-              if (isLiked) r.isFavorite = true;
-          });
-      } catch (error) {
-          console.error("Lỗi tải danh sách yêu thích:", error);
-      }
-  }
+onMounted(async () => {
+  timer = setInterval(nextSlide, 4000)
+  await fetchData();
 })
 
 onUnmounted(() => { if (timer) clearInterval(timer) })
@@ -155,7 +187,7 @@ const toggleFavorite = async (res) => {
   const currentUser = getCurrentUser();
   
   if (!currentUser) {
-    alert("Vui lòng đăng nhập để sử dụng tính năng yêu thích!");
+    toast.warning("Vui lòng đăng nhập để sử dụng tính năng yêu thích!");
     return;
   }
 
@@ -163,14 +195,20 @@ const toggleFavorite = async (res) => {
   res.isFavorite = !res.isFavorite;
 
   try {
-      const response = await axios.post(`${API_BASE_URL}/api/like`, { 
-          maNguoiDung: currentUser.id, // Fixed: id
-          maQuan: res.id
-      });
+      if (res.isFavorite) {
+          // Thêm vào yêu thích
+          await axios.post(`${API_BASE_URL}/api/like`, { 
+              userId: currentUser.id, 
+              shopId: res.id
+          });
+      } else {
+          // Xóa khỏi yêu thích
+          await axios.delete(`${API_BASE_URL}/api/like/${currentUser.id}/${res.id}`);
+      }
   } catch (error) {
       console.error("Lỗi thả tim:", error);
       res.isFavorite = oldState; 
-      alert("Lỗi kết nối server!");
+      toast.error("Lỗi kết nối server!");
   }
 }
 
@@ -186,7 +224,7 @@ const filteredFoods = computed(() => {
 </script>
 
 <template>
-  <div class="grab-container">
+  <div class="grab-container animate-fade-in">
     <StandardHeader show-menu-button @toggle-menu="isMenuOpen = !isMenuOpen" />
 
     <div v-if="isMenuOpen" class="mega-menu">

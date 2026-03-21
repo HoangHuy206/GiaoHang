@@ -57,14 +57,27 @@
 
       <!-- Input Area -->
       <div class="p-3 bg-white border-t border-gray-100">
-        <form @submit.prevent="sendMessage" class="flex gap-2">
+        <form @submit.prevent="sendMessage" class="flex gap-2 items-center">
           <input
             v-model="newMessage"
             type="text"
             placeholder="Nhập tin nhắn..."
             class="flex-1 bg-gray-100 border-0 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00b14f]"
           />
-          <button type="submit" class="bg-[#00b14f] text-white rounded-full p-2 hover:bg-[#009e39] transition-colors flex-shrink-0 w-10 h-10 flex items-center justify-center" :disabled="!newMessage.trim()">
+          
+          <!-- Voice Button -->
+          <button 
+            type="button"
+            @click="toggleVoiceRecognition"
+            :class="['rounded-full p-2 transition-all duration-300 flex-shrink-0 w-10 h-10 flex items-center justify-center', isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']"
+            :title="isRecording ? 'Đang nghe... (Dừng lại 2s để gửi)' : 'Nói để nhập tin nhắn'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+            </svg>
+          </button>
+
+          <button type="submit" class="bg-[#00b14f] text-white rounded-full p-2 hover:bg-[#009e39] transition-colors flex-shrink-0 w-10 h-10 flex items-center justify-center" :disabled="!newMessage.trim() && !isRecording">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
             </svg>
@@ -76,7 +89,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, watch, computed, onMounted } from 'vue';
+import { ref, nextTick, watch, computed, onMounted, onUnmounted } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
@@ -90,11 +103,19 @@ const isLoading = ref(false);
 const messagesContainer = ref(null);
 const authStore = useAuthStore();
 
+// Voice Recognition State
+const isRecording = ref(false);
+let recognition = null;
+let silenceTimer = null;
+
 // --- DÙNG ẢNH CỦA BẠN (ĐÃ IMPORT CHUẨN VITE) ---
 const aiImageUrl = ref(aiAvatar);
 
 const toggleChat = () => {
     isOpen.value = !isOpen.value;
+    if (!isOpen.value && isRecording.value) {
+      stopVoiceRecognition();
+    }
 };
 
 const scrollToBottom = async () => {
@@ -102,6 +123,87 @@ const scrollToBottom = async () => {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
   }
+};
+
+// Voice Recognition Logic
+const initVoiceRecognition = () => {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    console.error('Trình duyệt không hỗ trợ nhận diện giọng nói.');
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.lang = 'vi-VN';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  recognition.onresult = (event) => {
+    let interimTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        newMessage.value += event.results[i][0].transcript;
+      } else {
+        interimTranscript += event.results[i][0].transcript;
+      }
+    }
+    
+    // Reset silence timer whenever user speaks
+    resetSilenceTimer();
+  };
+
+  recognition.onerror = (event) => {
+    console.error('Lỗi nhận diện giọng nói:', event.error);
+    stopVoiceRecognition();
+  };
+
+  recognition.onend = () => {
+    if (isRecording.value) {
+      recognition.start(); // Keep listening if we didn't explicitly stop
+    }
+  };
+};
+
+const toggleVoiceRecognition = () => {
+  if (isRecording.value) {
+    stopVoiceRecognition();
+  } else {
+    startVoiceRecognition();
+  }
+};
+
+const startVoiceRecognition = () => {
+  if (!recognition) initVoiceRecognition();
+  if (!recognition) return;
+
+  isRecording.value = true;
+  recognition.start();
+  resetSilenceTimer();
+};
+
+const stopVoiceRecognition = () => {
+  isRecording.value = false;
+  if (recognition) {
+    recognition.stop();
+  }
+  if (silenceTimer) {
+    clearTimeout(silenceTimer);
+    silenceTimer = null;
+  }
+};
+
+const resetSilenceTimer = () => {
+  if (silenceTimer) clearTimeout(silenceTimer);
+  
+  silenceTimer = setTimeout(() => {
+    if (isRecording.value && newMessage.value.trim()) {
+      stopVoiceRecognition();
+      sendMessage();
+    } else if (isRecording.value) {
+      // If nothing was said, just stop recording after a while
+      stopVoiceRecognition();
+    }
+  }, 2000); // 2 seconds of silence
 };
 
 const addMessage = (text, isUser = false, products = []) => {

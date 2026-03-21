@@ -1,19 +1,23 @@
 <template>
-  <StandardHeader />
-  <div class="container mx-auto p-4 mt-4">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-green-800">Quản Lý Shop #{{ myShopId }} - {{ auth.user?.full_name }}</h1>
-        <div class="flex gap-2">
-            <button @click="showConfig = true" class="bg-blue-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-600 transition shadow-md">
-                ⚙️ Cấu Hình Shop
-            </button>
-            <button @click="showAddProduct = !showAddProduct" class="bg-orange-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition shadow-md">
-                {{ showAddProduct ? 'Đóng Form' : '+ Thêm Sản Phẩm' }}
-            </button>
-        </div>
-    </div>
+  <div class="shop-dashboard-page min-h-screen bg-gray-50">
+    <StandardHeader />
+    <div class="container mx-auto p-4 mt-4 animate-fade-in">
+      <div class="flex justify-between items-center mb-6">
+          <h1 class="text-3xl font-bold text-green-800">Quản Lý Shop #{{ myShopId }} - {{ auth.user?.full_name }}</h1>
+          <div class="flex gap-2">
+              <button @click="$router.push('/shop-stats')" class="bg-indigo-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-indigo-600 transition shadow-md">
+                  📊 Thống Kê
+              </button>
+              <button @click="showConfig = true" class="bg-blue-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-600 transition shadow-md">
+                  ⚙️ Cấu Hình Shop
+              </button>
+              <button @click="showAddProduct = !showAddProduct" class="bg-orange-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition shadow-md">
+                  {{ showAddProduct ? 'Đóng Form' : '+ Thêm Sản Phẩm' }}
+              </button>
+          </div>
+      </div>
+      <!-- ... (rest of template remains same) -->
 
-    <!-- Shop Config Modal -->
     <div v-if="showConfig" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in">
             <div class="bg-blue-600 p-4 text-white flex justify-between items-center">
@@ -126,21 +130,24 @@
        </div>
     </div>
   </div>
+</div>
 </template>
 
 <script setup>
-import { ref, onMounted, reactive } from 'vue';
+import { ref, onMounted, onUnmounted, reactive } from 'vue';
 import StandardHeader from '../components/StandardHeader.vue';
 import { useAuthStore } from '../stores/auth';
+import { useToastStore } from '../stores/toast';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { API_BASE_URL, SOCKET_URL } from '../config';
 import { botBus } from '../utils/botBus';
 
 const auth = useAuthStore();
+const toast = useToastStore();
 const orders = ref([]);
 const loading = ref(true);
-const socket = io(SOCKET_URL);
+let socket = null;
 
 // --- PRODUCT ADDING LOGIC ---
 const showAddProduct = ref(false);
@@ -173,18 +180,18 @@ const updateShopInfo = async () => {
     submittingConfig.value = true;
     try {
         await axios.put(`${API_BASE_URL}/api/shops/${myShopId.value}`, shopConfig);
-        alert("Cập nhật thông tin Shop thành công!");
+        toast.success("Cập nhật thông tin Shop thành công!");
         showConfig.value = false;
         fetchOrders(); // Refresh data
     } catch (e) {
-        alert("Lỗi khi cập nhật Shop: " + (e.response?.data?.message || e.message));
+        toast.error("Lỗi khi cập nhật Shop: " + (e.response?.data?.message || e.message));
     } finally {
         submittingConfig.value = false;
     }
 };
 
 const addProduct = async () => {
-    if (!myShopId.value) return alert("Không tìm thấy thông tin Shop của bạn.");
+    if (!myShopId.value) return toast.warning("Không tìm thấy thông tin Shop của bạn.");
     
     submitting.value = true;
     try {
@@ -211,10 +218,11 @@ const addProduct = async () => {
             newProd.productCode = '';
             newProd.image = null;
             showAddProduct.value = false;
+            toast.success("Thêm sản phẩm thành công!");
         }
     } catch (e) {
         console.error(e);
-        alert("Lỗi khi thêm sản phẩm: " + (e.response?.data?.message || e.message));
+        toast.error("Lỗi khi thêm sản phẩm: " + (e.response?.data?.message || e.message));
     } finally {
         submitting.value = false;
     }
@@ -249,7 +257,10 @@ const fetchOrders = async () => {
              orders.value = res.data;
              
              // Join Socket Room
-             socket.emit('join_room', `shop_${myShop.id}`);
+             if (socket && socket.connected) {
+                socket.emit('join_room', `shop_${myShop.id}`);
+                console.log("📡 Joined room:", `shop_${myShop.id}`);
+             }
         }
     } catch (e) {
         console.error(e);
@@ -258,18 +269,24 @@ const fetchOrders = async () => {
     }
 };
 
+const playNotificationSound = () => {
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    audio.play().catch(e => console.log("Audio play failed:", e));
+};
+
 const updateStatus = async (orderId, status) => {
     try {
         await axios.put(`${API_BASE_URL}/api/orders/${orderId}/status`, { status });
         // Optimistic update
         const o = orders.value.find(x => x.id === orderId);
         if (o) o.status = status;
+        toast.success("Cập nhật trạng thái thành công!");
     } catch (e) {
-        alert("Lỗi cập nhật trạng thái");
+        toast.error("Lỗi cập nhật trạng thái");
     }
 };
 
-const formatPrice = (price) => new Intl.NumberFormat('vi-VN').format(price) + 'k';
+const formatPrice = (price) => new Intl.NumberFormat('vi-VN').format(price) + 'đ';
 const formatStatus = (s) => s.toUpperCase();
 const getBorderColor = (s) => {
     if (s === 'pending') return 'border-yellow-500';
@@ -279,19 +296,41 @@ const getBorderColor = (s) => {
 };
 
 onMounted(() => {
+    socket = io(SOCKET_URL);
     fetchOrders();
 
     socket.on('connect', () => {
         console.log("✅ Socket connected with ID:", socket.id);
         if (myShopId.value) {
             socket.emit('join_room', `shop_${myShopId.value}`);
-            console.log(`- Rejoined room: shop_${myShopId.value}`);
         }
     });
 
     socket.on('new_order', (data) => {
-        alert("Có đơn hàng mới!");
-        fetchOrders(); 
+        console.log("🔔 New order received:", data);
+        toast.info(`🔔 CÓ ĐƠN HÀNG MỚI! (#${data.orderCode || data.orderId})`);
+        playNotificationSound();
+        
+        // Tải lại danh sách đơn hàng ngay lập tức
+        const shopIdToFetch = myShopId.value;
+        if (shopIdToFetch) {
+            axios.get(`${API_BASE_URL}/api/orders?role=shop&shopId=${shopIdToFetch}`)
+                .then(res => {
+                    orders.value = res.data;
+                });
+        }
+    });
+
+    socket.on('order_status_updated', (data) => {
+        console.log("🔄 Order status updated:", data);
+        // Tải lại danh sách đơn hàng khi có bất kỳ sự thay đổi trạng thái nào (ví dụ: tài xế nhận đơn)
+        const shopIdToFetch = myShopId.value;
+        if (shopIdToFetch) {
+            axios.get(`${API_BASE_URL}/api/orders?role=shop&shopId=${shopIdToFetch}`)
+                .then(res => {
+                    orders.value = res.data;
+                });
+        }
     });
 
     socket.on('bot_notification', (data) => {
@@ -306,6 +345,13 @@ onMounted(() => {
     });
 });
 
+onUnmounted(() => {
+    if (socket) {
+        socket.disconnect();
+        console.log("📡 Socket disconnected");
+    }
+});
+
 const simulateRefund = async (order) => {
     try {
         const res = await axios.post(`${API_BASE_URL}/api/test/simulate-refund`, {
@@ -318,9 +364,9 @@ const simulateRefund = async (order) => {
             bankAccount: order.customer_bank_account,
             bankName: order.customer_bank_name
         });
-        alert(res.data.message);
+        toast.success(res.data.message);
     } catch (e) {
-        alert("Lỗi mô phỏng hoàn tiền");
+        toast.error("Lỗi mô phỏng hoàn tiền");
     }
 };
 </script>

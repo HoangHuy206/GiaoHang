@@ -1,0 +1,26 @@
+
+
+Invoke-RestMethod -Uri "http://localhost:3000/api/payment/webhook" -Method Post -Body (@{content="D30009"; transferAmount=91000} |      
+     ConvertTo-Json) -ContentType "application/json"
+
+
+   
+
+   fix lại cho tôi là khi thêm sp trên tele thì sẽ hiện luôn cả hình ảnh khi mà gửi ảnh lên đồng thời nếu mà tạo shop mới thì shop ý sẽ hiện  
+   lên ở trang food để cho người dùng vào để xem sp và mua những sp trong ý
+
+
+   hiện tại web tôi cũng khá là hoàn hiện rồi hãy check lại 1 lượt cho tôi xem các chức năng đã ổn chưa ví dụ như là thanh toán bằng QR       
+   thì sẽ thanh toán tự động chuyển qua là thanh toán thành công khi người dùng chuyển tiền , và chức năng đặt hàng của người dùng ở đây      
+   sẽ chia làm 2 trường hợp trường hợp 1 khi mà người dùng thanh toán bằng tiền mặt thì khi người dùng bấm dặt hàng thì đầu tiên sẽ là ở      
+   mốc chờ xác nhận khi mà shop bấm xác nhận và tìm tài xế xong thì sẽ nhảy qua mục đã xác nhận thì cùng lúc đó khi mà tài xế đang bật        
+   hoạt động thì đơn sẽ nổ bên phía tài xế và bấm xác nhận thì định vị sẽ tự động nhảy qua chỗ shop và khi tài xế đến shop và lấy được        
+   hàng thì shop sẽ hiện lên nút tài xế đã lấy hàng thì lập tức bên mh tài xế sẽ định vị qua chỗ người người đặt và khi giao hàng thành       
+   công thì sẽ hiện lên nút đã giao thành công để bấm vào xác nhận là giao thành công , còn trường hợp 2 là khi thanh toán bằng QR thì tự     
+   động là sẽ xác nhận đơn hàng luôn thì sẽ bên mh của tài xế sẽ nổ đơn luôn và lặp lại các thao tác như bth 
+ 
+
+
+ git add .
+   git commit -m "fix: remove secrets and standardise env filename"
+   git push

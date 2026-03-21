@@ -1,5 +1,5 @@
 <template>
-  <div class="register-page">
+  <div class="register-page animate-fade-in">
     <div class="design-container">
       
       <img src="../assets/img/anh.logo/anhdangkynguoidung.png" alt="Background" class="bg-image">
@@ -62,8 +62,10 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { API_BASE_URL } from '../config';
+import { useToastStore } from '../stores/toast';
 
 const router = useRouter();
+const toast = useToastStore();
 const fullname = ref(''); // Thêm ref cho Họ tên
 const email = ref('');
 const username = ref('');
@@ -73,7 +75,7 @@ const confirmPassword = ref('');
 const handleRegister = async () => {
   // ... (password check)
   if (password.value !== confirmPassword.value) {
-    alert("Mật khẩu nhập lại không khớp!");
+    toast.warning("Mật khẩu nhập lại không khớp!");
     return;
   }
 
@@ -96,15 +98,15 @@ const handleRegister = async () => {
 
     // 3. Xử lý kết quả
     if (response.ok && data.success) {
-      alert("Đăng ký thành công! Hãy đăng nhập ngay.");
+      toast.success("Đăng ký thành công! Hãy đăng nhập ngay.");
       router.push('/login'); 
     } else {
-      alert("Lỗi: " + (data.error || "Đăng ký thất bại"));
+      toast.error("Lỗi: " + (data.error || "Đăng ký thất bại"));
     }
 
   } catch (error) {
     console.error("Lỗi kết nối:", error);
-    alert("Không thể kết nối tới Server. Hãy đảm bảo file server.js đang chạy!");
+    toast.error("Không thể kết nối tới Server. Hãy đảm bảo file server.js đang chạy!");
   }
 };
 </script>

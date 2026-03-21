@@ -1,83 +1,107 @@
-# 🚚 Giao Hàng Tận Nơi (GiaoHangTanNoi)
+# 🛵 GiaoHangTanNoi - Hệ thống Đặt hàng & Giao hàng Trực tuyến
 
-Dự án ứng dụng giao đồ ăn trực tuyến hoàn thiện (Full-stack) được xây dựng với kiến trúc hiện đại, tích hợp bản đồ thời gian thực và Trí tuệ nhân tạo (AI).
-
----
-
-## 🛠️ 1. Yêu cầu hệ thống (Prerequisites)
-
-Để chạy được dự án này, bạn cần cài đặt các công cụ sau trước:
-
-1.  **Node.js (Bản 18.x trở lên):** Môi trường chạy JavaScript chính.
-    *   👉 [Tải Node.js LTS tại đây](https://nodejs.org/)
-2.  **MySQL Server:** Hệ quản trị cơ sở dữ liệu để lưu trữ người dùng, sản phẩm, đơn hàng.
-    *   👉 [Tải MySQL Installer tại đây](https://dev.mysql.com/downloads/installer/)
-3.  **Git:** Công cụ để tải mã nguồn từ GitHub.
-    *   👉 [Tải Git tại đây](https://git-scm.com/downloads)
-4.  **Visual Studio Code (Khuyên dùng):** Trình soạn thảo mã nguồn tốt nhất.
-    *   👉 [Tải VS Code tại đây](https://code.visualstudio.com/)
+**GiaoHangTanNoi** là một nền tảng thương mại điện tử hiện đại dành cho việc đặt món ăn và giao hàng, kết nối liền mạch giữa **Khách hàng**, **Cửa hàng (Shop)** và **Tài xế**. Dự án tích hợp các công nghệ thời gian thực (Real-time), Trợ lý ảo AI và thanh toán tự động.
 
 ---
 
-## 📦 2. Hướng dẫn Cài đặt Thư viện
+## 🌟 Tính năng nổi bật
 
-Sau khi tải dự án về máy, bạn cần cài đặt các thư viện (dependencies) cho cả Server và Client.
+### 1. Đối với Khách hàng
+- **🛒 Đặt hàng thông minh:** Giao diện trực quan, dễ dàng tìm kiếm quán ăn và món ngon.
+- **💳 Thanh toán QR tự động:** Tích hợp **SePay (VietQR)**. Sau khi quét mã, hệ thống tự động xác nhận thanh toán, cập nhật trạng thái đơn hàng về **0đ (Đã thanh toán)** và phát âm thanh thông báo ngay lập tức.
+- **🗺️ Theo dõi Real-time:** Theo dõi vị trí tài xế di chuyển trên bản đồ trực tuyến (Leaflet) theo thời gian thực.
+- **🤖 Trợ lý ảo AI:** Chatbot thông minh sử dụng **Google Gemini AI** hỗ trợ giải đáp thắc mắc và tư vấn món ăn.
+- **📧 Email xác nhận:** Tự động gửi email hóa đơn chi tiết ngay khi đơn hàng được xác nhận thành công.
 
-### Bước 1: Cài đặt cho Server (Tại thư mục gốc)
-Mở terminal tại thư mục `GiaoHangTanNoi/` và chạy:
+### 2. Đối với Tài xế
+- **🔔 Nhận đơn tức thì:** Thông báo đơn hàng mới trong khu vực qua Socket.io.
+- **📍 Điều hướng bản đồ:** Xem vị trí quán ăn và địa chỉ khách hàng chính xác trên bản đồ.
+- **💬 Chat trực tuyến:** Chat trực tiếp với khách hàng ngay trong ứng dụng.
+
+### 3. Đối với Chủ quán (Shop)
+- **📊 Quản lý đơn hàng:** Tiếp nhận và cập nhật trạng thái đơn hàng (Đang chuẩn bị, Đã giao...).
+- **📈 Thống kê kinh doanh:** Xem báo cáo doanh thu, món ăn bán chạy theo ngày/tháng.
+- **🍴 Quản lý menu:** Thêm/Sửa/Xóa món ăn và cập nhật hình ảnh dễ dàng.
+
+### 4. Hệ thống Quản trị (Admin)
+- Quản lý toàn bộ người dùng, tài xế và các cửa hàng trên hệ thống.
+- Duyệt và kiểm soát các giao dịch thanh toán.
+
+---
+
+## 🛠️ Công nghệ sử dụng
+
+### Frontend
+- **Framework:** Vue.js 3 (Vite)
+- **State Management:** Pinia
+- **Styling:** TailwindCSS, Vanilla CSS
+- **Real-time:** Socket.io-client
+- **Map:** Leaflet.js
+
+### Backend
+- **Runtime:** Node.js & Express
+- **Database:** MySQL (Hỗ trợ tốt trên TiDB Cloud)
+- **Real-time Server:** Socket.io
+- **AI Integration:** Google Generative AI (Gemini)
+- **Email:** Nodemailer (Gmail SMTP)
+- **Security:** JWT (JSON Web Token), Bcrypt (Mã hóa mật khẩu)
+
+---
+
+## 🚀 Cài đặt và Chạy thử
+
+### 1. Clone dự án
 ```bash
+git clone https://github.com/your-username/GiaoHangTanNoi.git
+cd GiaoHangTanNoi
+```
+
+### 2. Cấu hình Environment Variables
+Tạo file `.env` trong thư mục `server/` và cấu hình các thông số sau:
+```env
+PORT=3000
+DB_HOST=your_db_host
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_NAME=GiaoHangTanNoi
+JWT_SECRET=your_jwt_secret
+EMAIL_USER=your_gmail@gmail.com
+EMAIL_PASS=your_gmail_app_password
+GEMINI_API_KEY=your_gemini_key
+SEPAY_WEBHOOK_KEY=SEPAY_TOKEN_2026
+```
+
+### 3. Cài đặt Dependencies
+```bash
+# Cài đặt cho Server
+cd server
+npm install
+
+# Cài đặt cho Client
+cd ../client
 npm install
 ```
-*Lệnh này sẽ tự động cài: Express, MySQL2, Socket.io, Gemini AI, Multer, Bcrypt, v.v.*
 
-### Bước 2: Cài đặt cho Client (Giao diện)
-Chuyển vào thư mục client và cài đặt:
+### 4. Chạy ứng dụng
 ```bash
-cd client
-npm install
-```
-*Lệnh này sẽ cài: Vue 3, Vite, Tailwind CSS, Leaflet (Bản đồ), Pinia (Giỏ hàng), v.v.*
+# Chạy Server (tại thư mục server)
+npm run dev
 
----
-
-## ⚙️ 3. Cấu hình Cơ sở dữ liệu & Môi trường
-
-1.  **Tạo Database:**
-    *   Mở MySQL (Workbench hoặc Command Line).
-    *   Tạo database mới: `CREATE DATABASE giaohangtannoi;`
-    *   Sử dụng database: `USE giaohangtannoi;`
-    *   Chạy nội dung file `server/schema.sql` (nếu có) để tạo bảng.
-
-2.  **Biến môi trường (.env):**
-    *   Tạo file `.env` tại thư mục gốc (copy từ `.env.example`).
-    *   Điền thông tin MySQL và **Gemini API Key** (Lấy tại [Google AI Studio](https://aistudio.google.com/app/apikey)).
-
----
-
-## 🚀 4. Khởi động ứng dụng
-
-Bạn có thể khởi chạy cả Client và Server cùng lúc chỉ với một câu lệnh duy nhất tại thư mục gốc:
-
-```bash
-# Quay lại thư mục gốc nếu đang ở trong client
-cd ..
-
-# Chạy chế độ phát triển (Development)
+# Chạy Client (tại thư mục client)
 npm run dev
 ```
 
-*   **Frontend (Giao diện):** [http://localhost:5173](http://localhost:5173)
-*   **Backend (Máy chủ API):** [http://localhost:3000](http://localhost:3000)
+---
+
+## 📸 Demo giao diện
+*(Bạn có thể thêm hình ảnh chụp màn hình dự án vào đây)*
 
 ---
 
-## 🌟 Các tính năng chính
-- 🔐 **Bảo mật:** Đăng nhập, đăng ký, mã hóa mật khẩu với Bcrypt.
-- 🍕 **Mua sắm:** Xem món ăn, thêm vào giỏ hàng, thanh toán.
-- 🗺️ **Bản đồ:** Theo dõi đường đi của tài xế thời gian thực bằng Leaflet.
-- 🤖 **AI Support:** Chatbot thông minh hỗ trợ khách hàng (Gemini AI).
-- 📱 **Real-time:** Thông báo đơn hàng và cập nhật trạng thái ngay lập tức qua Socket.io.
+## 🤝 Liên hệ hỗ trợ
+Nếu bạn gặp vấn đề hoặc có đóng góp cho dự án, vui lòng liên hệ:
+- **Email:** [haiquan2482006@gmail.com](mailto:haiquan2482006@gmail.com , hhuy281220@gmail.com)
+
 
 ---
-
-**Liên hệ hỗ trợ:** [haiquan2482006@gmail.com](mailto:haiquan2482006@gmail.com)
+*Dự án được phát triển với tâm huyết nhằm mang lại trải nghiệm giao hàng tốt nhất!* 🚀

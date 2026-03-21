@@ -1,18 +1,19 @@
 <template>
-  <StandardHeader />
-  <div class="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg border-t-4 border-green-500 mt-8 mb-8">
-    <h2 class="text-3xl font-bold text-green-800 mb-8 text-center">Hồ Sơ Của Bạn</h2>
-
-    <div class="flex flex-col items-center mb-8">
-        <div class="w-32 h-32 bg-gray-200 rounded-full flex items-center justify-center mb-4 overflow-hidden border-4 border-green-100 relative">
-             <img v-if="user.avatar_url" :src="getAvatarUrl(user.avatar_url)" alt="Avatar" class="w-full h-full object-cover">
-             <span v-else class="text-4xl">👤</span>
-        </div>
-        <input type="file" ref="fileInput" @change="handleFileChange" accept="image/*" class="hidden">
-        <button type="button" @click="$refs.fileInput.click()" class="text-sm text-green-600 font-bold hover:underline">Đổi Avatar</button>
-    </div>
-
-    <form @submit.prevent="updateProfile" class="space-y-6">
+  <div class="profile-page-wrapper animate-fade-in">
+    <StandardHeader />
+    <div class="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg border-t-4 border-green-500 mt-8 mb-8">
+      <h2 class="text-3xl font-bold text-green-800 mb-8 text-center">Hồ Sơ Của Bạn</h2>
+  
+      <div class="flex flex-col items-center mb-8">
+          <div class="w-32 h-32 bg-gray-200 rounded-full flex items-center justify-center mb-4 overflow-hidden border-4 border-green-100 relative">
+               <img v-if="user.avatar_url" :src="getAvatarUrl(user.avatar_url)" alt="Avatar" class="w-full h-full object-cover">
+               <span v-else class="text-4xl">👤</span>
+          </div>
+          <input type="file" ref="fileInput" @change="handleFileChange" accept="image/*" class="hidden">
+          <button type="button" @click="$refs.fileInput.click()" class="text-sm text-green-600 font-bold hover:underline">Đổi Avatar</button>
+      </div>
+  
+      <form @submit.prevent="updateProfile" class="space-y-6">
         <div>
             <label class="block text-sm font-medium text-gray-700">Họ và tên</label>
             <input v-model="user.full_name" type="text" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500">
@@ -44,7 +45,7 @@
         <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div v-for="shop in favorites" :key="shop.id" class="border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition bg-white relative group">
                 <div class="h-32 bg-gray-100">
-                    <img :src="shop.image_url" class="w-full h-full object-cover" alt="Shop Image">
+                    <img :src="getShopImageUrl(shop.image_url)" class="w-full h-full object-cover" alt="Shop Image">
                 </div>
                 <div class="p-4">
                     <h4 class="font-bold text-gray-800">{{ shop.name }}</h4>
@@ -71,36 +72,19 @@
             </div>
         </div>
     </div>
-  </div>
-</template>
-
+    </div>
+    </div>
+    </template>
 <script setup>
 import { useAuthStore } from '../stores/auth';
+import { useToastStore } from '../stores/toast';
 import StandardHeader from '../components/StandardHeader.vue';
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 
-// Import images for consistent display with Food.vue
-import comngon from '@/assets/img/anhND/comngon.jpg'
-import lotte from '@/assets/img/anhND/lotte.jpg'
-import comtho from '@/assets/img/anhND/comtho.jpg'
-import gaham from '@/assets/img/anhND/gaham.jpg'
-import toco from '@/assets/img/anhND/toco.jpg'
-import buncham from '@/assets/img/anhND/buncham.jpg'
-import mixue from '@/assets/img/anhND/mixue.jpg'
-
-const localShopImages = {
-    1: comngon,
-    2: lotte,
-    3: comtho,
-    4: gaham,
-    5: toco,
-    6: buncham,
-    7: mixue
-};
-
 const auth = useAuthStore();
+const toast = useToastStore();
 const user = ref({ ...auth.user });
 const orders = ref([]);
 const favorites = ref([]);
@@ -114,35 +98,52 @@ const getAvatarUrl = (path) => {
     return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
 };
 
+const getShopImageUrl = (url) => {
+    if (!url) return new URL('@/assets/img/anhND/anhdaidienmacdinh.jpg', import.meta.url).href;
+    
+    const fileName = url.split('/').pop();
+
+    const ndImages = ['comngon.jpg', 'lotte.jpg', 'comtho.jpg', 'gaham.jpg', 'toco.jpg', 'buncham.jpg', 'mixue.jpg', 'anhdaidienmacdinh.jpg'];
+    if (ndImages.includes(fileName)) {
+        return new URL(`../assets/img/anhND/${fileName}`, import.meta.url).href;
+    }
+
+    const quanImages = ['pho-ga-anh-thu.png'];
+    if (quanImages.includes(fileName)) {
+        return new URL(`../assets/img/anhquanan/${fileName}`, import.meta.url).href;
+    }
+
+    if (url.startsWith('http')) return url;
+    
+    const path = url.startsWith('/') ? url : `/${url}`;
+    return `${API_BASE_URL}${path}`;
+};
+
 const handleFileChange = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    // Immediately upload avatar for better UX
     const formData = new FormData();
     formData.append('avatar', file);
-    formData.append('full_name', user.value.full_name || ''); // Send current name/addr to avoid clearing
+    formData.append('full_name', user.value.full_name || '');
     formData.append('address', user.value.address || '');
     formData.append('email', user.value.email || '');
     formData.append('phone', user.value.phone || '');
 
     try {
         const res = await axios.put(`${API_BASE_URL}/api/users/${user.value.id}`, formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data'
-            }
+            headers: { 'Content-Type': 'multipart/form-data' }
         });
         
         if (res.data.success) {
             user.value = res.data.user;
-            // Update store
             auth.user = res.data.user;
             localStorage.setItem('user', JSON.stringify(res.data.user));
-            alert("Đổi avatar thành công!");
+            toast.success("Đổi avatar thành công!");
         }
     } catch (e) {
         console.error(e);
-        alert("Lỗi khi tải ảnh lên: " + (e.response?.data?.error || e.message));
+        toast.error("Lỗi khi tải ảnh lên: " + (e.response?.data?.error || e.message));
     }
 };
 
@@ -161,11 +162,11 @@ const updateProfile = async () => {
              user.value = res.data.user;
              auth.user = res.data.user;
              localStorage.setItem('user', JSON.stringify(res.data.user));
-             alert("Cập nhật hồ sơ thành công!");
+             toast.success("Cập nhật hồ sơ thành công!");
         }
     } catch (e) {
         console.error(e);
-        alert("Lỗi cập nhật: " + (e.response?.data?.error || e.message));
+        toast.error("Lỗi cập nhật: " + (e.response?.data?.error || e.message));
     }
 };
 
@@ -196,34 +197,26 @@ const formatStatus = (status) => {
 const unlike = async (shopId) => {
     if (!confirm('Bạn muốn bỏ yêu thích quán này?')) return;
     try {
-        await axios.post(`${API_BASE_URL}/api/like`, {
-            maNguoiDung: user.value.id,
-            maQuan: shopId
-        });
-        // Remove from list
+        await axios.delete(`${API_BASE_URL}/api/like/${user.value.id}/${shopId}`);
         favorites.value = favorites.value.filter(f => f.id !== shopId);
+        toast.success("Đã bỏ yêu thích quán!");
     } catch (e) {
-        alert("Lỗi: " + e.message);
+        toast.error("Lỗi: " + e.message);
     }
 };
 
 onMounted(async () => {
     if (auth.user) {
         try {
-            // Load Orders
             const resOrders = await axios.get(`${API_BASE_URL}/api/orders?role=${auth.user.role}&userId=${auth.user.id}`);
             orders.value = resOrders.data;
 
-            // Load Favorites
             const resFav = await axios.get(`${API_BASE_URL}/api/like/${auth.user.id}`);
-            favorites.value = resFav.data.map(shop => ({
-                ...shop,
-                // Override image if local mapping exists
-                image_url: localShopImages[shop.id] || shop.image_url
-            }));
+            favorites.value = resFav.data;
         } catch (e) {
             console.error(e);
         }
     }
 });
 </script>
+
