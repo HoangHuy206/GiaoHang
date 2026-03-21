@@ -541,10 +541,11 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
 // Bắt mọi request khác (không phải API) và trả về index.html của Vue.js
-app.get('*', (req, res) => {
-    // Chỉ trả về index.html nếu request không phải là file tĩnh hoặc API
+app.get(/^.*$/, (req, res) => {
     if (!req.url.startsWith('/api/') && !req.url.startsWith('/uploads/')) {
         res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+    } else {
+        res.status(404).json({ error: 'Đường dẫn không tồn tại (404 Not Found)' });
     }
 });
 
