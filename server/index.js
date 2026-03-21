@@ -536,6 +536,29 @@ app.get('/api/shops/:id/stats', async (req, res) => {
     }
 });
 
+// ==========================================
+// API XỬ LÝ CHAT AI (Gửi sang n8n)
+// ==========================================
+app.post('/api/chat', async (req, res) => {
+    try {
+        const payload = req.body; // Lấy dữ liệu tin nhắn từ frontend gửi lên
+        const n8nUrl = process.env.N8N_WEBHOOK_URL;
+
+        if (!n8nUrl) {
+            return res.status(500).json({ error: 'Chưa cấu hình đường dẫn N8N_WEBHOOK_URL trong file .env' });
+        }
+
+        // Dùng axios để bắn tin nhắn sang Webhook của n8n
+        const response = await axios.post(n8nUrl, payload);
+
+        // Trả câu trả lời của n8n về lại cho giao diện web
+        res.json(response.data);
+    } catch (error) {
+        console.error("Lỗi khi gọi API Chat AI:", error.message);
+        res.status(500).json({ error: 'AI hiện đang bận hoặc không thể kết nối, vui lòng thử lại sau.' });
+    }
+});
+
 // Cấu hình phục vụ file tĩnh
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(path.join(__dirname, '../client/dist')));
