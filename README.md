@@ -95,8 +95,8 @@ npm run dev
 
 ## 🤝 Liên hệ & Hỗ trợ
 Nếu bạn có bất kỳ câu hỏi hoặc góp ý nào cho dự án, vui lòng liên hệ:
-- **Email:** haiquan2482006@gmail.com | hhuy281220@gmail.com
-- **Website:** [GiaoHangTanNoi.vn](https://github.com/HoangHuy206/GiaoHang)
+- **Email:** haiquan2482006@gmail.com | hhuy281220@gmail.com | dobinh225599@gmail.com 
+- **Website:** [giaohangtannoi.id,vn](https://github.com/HoangHuy206/GiaoHang)
 
 ---
 *Phát triển bởi đội ngũ GiaoHangTanNoi - Mang niềm vui đến tận cửa nhà bạn!* 🚀
