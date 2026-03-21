@@ -541,18 +541,27 @@ app.get('/api/shops/:id/stats', async (req, res) => {
 // ==========================================
 app.post('/api/chat', async (req, res) => {
     try {
-        const payload = req.body; // Lấy dữ liệu tin nhắn từ frontend gửi lên
+        const payload = req.body; 
         const n8nUrl = process.env.N8N_WEBHOOK_URL;
 
         if (!n8nUrl) {
             return res.status(500).json({ error: 'Chưa cấu hình đường dẫn N8N_WEBHOOK_URL trong file .env' });
         }
 
-        // Dùng axios để bắn tin nhắn sang Webhook của n8n
+        // Gọi sang n8n
         const response = await axios.post(n8nUrl, payload);
 
-        // Trả câu trả lời của n8n về lại cho giao diện web
-        res.json(response.data);
+        // N8n thường bọc câu trả lời trong biến 'output'. Ta bóc nó ra.
+        const aiText = response.data.output || response.data.text || response.data.message || "Xin lỗi, mình không hiểu ý bạn.";
+
+        // Trả về cho Frontend với các biến phổ biến nhất để Vue dễ dàng nhận ra text thuần
+        res.json({ 
+            message: aiText,
+            text: aiText,
+            reply: aiText,
+            output: aiText
+        });
+        
     } catch (error) {
         console.error("Lỗi khi gọi API Chat AI:", error.message);
         res.status(500).json({ error: 'AI hiện đang bận hoặc không thể kết nối, vui lòng thử lại sau.' });
