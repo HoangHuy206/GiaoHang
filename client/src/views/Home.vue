@@ -376,11 +376,57 @@ watch(isMenuOpen, (open) => {
 
 /* Mobile Responsive cho phần Content */
  @media (max-width: 768px) {
+  .background-img img {
+    height: auto;
+    min-height: 200px;
+    max-height: 40vh;
+    object-fit: cover;
+  }
+  .content-intro h2 {
+    font-size: 1.25rem;
+    margin: 30px 15px;
+    padding: 0 10px;
+  }
+  .display-section {
+    padding: 10px;
+  }
+  .tab-navigation { 
+    gap: 10px; 
+    margin-bottom: 25px;
+    flex-wrap: wrap;
+  }
+  .tab-navigation button { 
+    padding: 10px 20px; 
+    font-size: 14px; 
+    flex: 1;
+    min-width: 140px;
+  }
   .content-layout { flex-direction: column; }
-  .left-column { width: 100%; padding: 0; margin-bottom: 20px; }
+  .left-column { 
+    width: 100%; 
+    padding: 0; 
+    margin-bottom: 15px; 
+    text-align: center;
+  }
+  .left-column h2 { font-size: 26px; }
   .right-column { width: 100%; }
-  .menu-sidebar { display: none; }
-  .mega-menu-content { flex-direction: column; }
+  .service-item { 
+    padding: 16px; 
+    margin-bottom: 12px;
+  }
+  .icon-box { width: 50px; height: 50px; margin-right: 15px; }
+  .text-box h3 { font-size: 17px; }
+  .text-box p { font-size: 14px; }
+  
+  .info-section { margin: 50px auto; }
+  .info-section h1 { font-size: 24px; padding: 0 10px; }
+  .card-container { gap: 20px; }
+  .info-card { padding: 25px 20px; min-width: 100%; }
+  
+  .footer-container { flex-direction: column; gap: 40px; }
+  .footer-column { width: 100%; text-align: center; }
+  .footer-column ul li a:hover { padding-left: 0; color: #00b14f; font-weight: bold; }
+  .address-box { margin-top: 20px; }
 }
 
 .service-item {

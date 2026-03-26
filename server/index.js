@@ -1,4 +1,6 @@
 require('dotenv').config();
+require('./utils/paymentReminders'); // Khởi động Bot Telegram chạy ngầm cùng Server
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -47,7 +49,6 @@ app.use((req, res, next) => {
 // Cấu hình CORS cực kỳ linh hoạt
 app.use(cors({
     origin: function (origin, callback) {
-        // Cho phép mọi origin để dễ debug khi deploy, sau này có domain thì sửa lại
         callback(null, true);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -56,8 +57,8 @@ app.use(cors({
     optionsSuccessStatus: 200 
 }));
 
-// Xử lý Preflight cho tất cả các route (Sửa chuẩn cho Express 5)
-app.options(/^.*$/, cors());
+// Xử lý Preflight cho tất cả các route (Dùng Regex Object cho chuẩn Express 5)
+app.options(/.*/, cors());
 
 app.use(compression());
 app.use(express.json());
@@ -66,7 +67,7 @@ const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-const onlineDrivers = new Map(); // Store active drivers: userId -> { socketId, lat, lng }
+const onlineDrivers = new Map();
 
 function generateOrderCode(orderId) {
     return `D${String(orderId).padStart(3, '0')}`;
@@ -211,7 +212,6 @@ app.post('/api/orders', async (req, res) => {
         await connection.commit();
         const orderCode = generateOrderCode(orderId);
         
-        // Luôn phát tín hiệu new_order cho Shop để cập nhật real-time
         io.to(`shop_${shopId}`).emit('new_order', { 
             orderId, 
             totalPrice, 
@@ -237,7 +237,6 @@ app.put('/api/orders/:id/status', async (req, res) => {
         query += ' WHERE id = ?'; params.push(req.params.id);
         await pool.query(query, params);
 
-        // Lấy shop_id để thông báo cho shop
         const [orderRows] = await pool.query('SELECT shop_id FROM orders WHERE id = ?', [req.params.id]);
         if (orderRows.length > 0) {
             const shopId = orderRows[0].shop_id;
@@ -255,8 +254,8 @@ app.put('/api/orders/:id/status', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
 app.post('/api/payment/webhook', async (req, res) => {
-    // 🛡️ BẢO MẬT WEBHOOK: Kiểm tra Token từ SePay (Bạn cài đặt trong Header SePay là x-api-key)
     const secureToken = process.env.SEPAY_WEBHOOK_KEY || 'SEPAY_TOKEN_2026';
     const clientToken = req.headers['x-api-key'];
 
@@ -271,12 +270,10 @@ app.post('/api/payment/webhook', async (req, res) => {
         const { content, amount } = req.body;
         if (!content) return res.status(400).json({ error: 'No content' });
 
-        // Tìm mã đơn hàng Dxxx trong nội dung chuyển khoản
         const match = String(content).match(/D(\d+)/i);
         if (match) {
             const orderId = match[1];
 
-            // 2. Kiểm tra Idempotency (Chống xử lý trùng lặp)
             const [orderCheck] = await pool.query("SELECT payment_status, shop_id, total_price FROM orders WHERE id = ?", [orderId]);
             
             if (orderCheck.length === 0) {
@@ -289,13 +286,11 @@ app.post('/api/payment/webhook', async (req, res) => {
                 return res.json({ success: true, message: 'Already paid' });
             }
 
-            // 3. Cập nhật trạng thái (Sử dụng các cột từ migration)
             await pool.query(
                 "UPDATE orders SET status = 'finding_driver', payment_status = 'paid', payment_method = 'banking', paid_at = NOW() WHERE id = ?", 
                 [orderId]
             );
 
-            // 4. Lưu vết giao dịch vào bảng transactions
             await pool.query(
                 "INSERT INTO transactions (order_code, amount, content, gateway) VALUES (?, ?, ?, ?)",
                 [`D${orderId.padStart(3, '0')}`, amount || 0, content, 'SePay']
@@ -304,7 +299,6 @@ app.post('/api/payment/webhook', async (req, res) => {
             const order = orderCheck[0];
             const orderCode = generateOrderCode(orderId);
 
-            // 5. Thông báo Real-time
             io.to(`order_${orderId}`).emit('payment_success', { orderId });
             io.to(`shop_${order.shop_id}`).emit('new_order', { 
                 orderId, 
@@ -314,7 +308,6 @@ app.post('/api/payment/webhook', async (req, res) => {
                 status: 'finding_driver' 
             });
 
-            // 6. Tìm tài xế và gửi Email
             broadcastOrderToDrivers(orderId);
             sendOrderConfirmationEmail(orderId);
 
@@ -358,7 +351,6 @@ app.post('/api/auth/register', async (req, res) => {
         const [existing] = await pool.query('SELECT id FROM users WHERE username = ?', [username]);
         if (existing.length > 0) return res.status(400).json({ success: false, error: 'Tên đăng nhập đã tồn tại.' });
         
-        // Mã hóa mật khẩu trước khi lưu
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
         
@@ -375,21 +367,16 @@ app.post('/api/auth/login', async (req, res) => {
         if (rows.length === 0) return res.status(401).json({ error: 'Tài khoản không tồn tại.' });
 
         const user = rows[0];
-        // So sánh mật khẩu nhập vào với mật khẩu đã mã hóa trong DB
         const isMatch = await bcrypt.compare(password, user.password);
-        
-        // Hỗ trợ tạm thời cho mật khẩu cũ chưa mã hóa (để bạn không bị khóa tài khoản cũ)
         const isOldPlainMatch = (password === user.password);
 
         if (isMatch || isOldPlainMatch) {
-            // Tạo JWT Token
             const token = jwt.sign(
                 { id: user.id, username: user.username, role: user.role },
                 JWT_SECRET,
                 { expiresIn: '7d' }
             );
 
-            // Không gửi password về frontend
             const { password: _, ...userWithoutPassword } = user;
             res.json({ success: true, user: userWithoutPassword, token });
         } else {
@@ -509,7 +496,6 @@ app.get('/api/shops/:id/stats', async (req, res) => {
         const shopId = req.params.id;
         const date = req.query.date || new Date().toISOString().split('T')[0];
 
-        // 1. Top Products
         const [topProducts] = await pool.query(`
             SELECT p.name, SUM(oi.quantity) as sold
             FROM order_items oi
@@ -521,7 +507,6 @@ app.get('/api/shops/:id/stats', async (req, res) => {
             LIMIT 5
         `, [shopId, date]);
 
-        // 2. Peak Times (Orders per hour)
         const [peakTimes] = await pool.query(`
             SELECT HOUR(created_at) as order_hour, COUNT(*) as count
             FROM orders
@@ -536,9 +521,6 @@ app.get('/api/shops/:id/stats', async (req, res) => {
     }
 });
 
-// ==========================================
-// API XỬ LÝ CHAT AI (Gửi sang n8n)
-// ==========================================
 app.post('/api/chat', async (req, res) => {
     try {
         const payload = req.body; 
@@ -548,13 +530,9 @@ app.post('/api/chat', async (req, res) => {
             return res.status(500).json({ error: 'Chưa cấu hình đường dẫn N8N_WEBHOOK_URL trong file .env' });
         }
 
-        // Gọi sang n8n
         const response = await axios.post(n8nUrl, payload);
-
-        // N8n thường bọc câu trả lời trong biến 'output'. Ta bóc nó ra.
         const aiText = response.data.output || response.data.text || response.data.message || "Xin lỗi, mình không hiểu ý bạn.";
 
-        // Trả về cho Frontend với các biến phổ biến nhất để Vue dễ dàng nhận ra text thuần
         res.json({ 
             message: aiText,
             text: aiText,
@@ -572,8 +550,8 @@ app.post('/api/chat', async (req, res) => {
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
-// Bắt mọi request khác (không phải API) và trả về index.html của Vue.js
-app.get(/^.*$/, (req, res) => {
+// Bắt mọi request khác (không phải API) và trả về index.html của Vue.js (Dùng Regex Object cho chuẩn Express 5)
+app.get(/.*/, (req, res) => {
     if (!req.url.startsWith('/api/') && !req.url.startsWith('/uploads/')) {
         res.sendFile(path.join(__dirname, '../client/dist/index.html'));
     } else {

@@ -550,4 +550,46 @@ const filteredFoods = computed(() => {
     background: #e0e0e0;
     margin: 30px 0;
 }
+/* Mobile Responsive */
+@media (max-width: 1024px) {
+  .search-overlay { padding-left: 40px; }
+  .search-box { width: 400px; padding: 30px; }
+}
+
+@media (max-width: 768px) {
+  .slider-container { height: 350px; }
+  .search-overlay { 
+    padding: 20px; 
+    align-items: flex-end; 
+    background: linear-gradient(to top, rgba(0,0,0,0.5), transparent);
+  }
+  .search-box { 
+    width: 100%; 
+    padding: 20px; 
+    margin-bottom: 20px;
+  }
+  .search-box .greeting { font-size: 14px; margin-bottom: 5px; }
+  .search-box .title { font-size: 18px; line-height: 1.3; margin-bottom: 15px; }
+  .input-group { display: flex; flex-direction: column; gap: 10px; }
+  .inp-find { width: 100%; margin: 0; }
+  .btn-find { margin-left: 0; width: 100%; padding: 12px; }
+  
+  .restaurant-container { padding: 30px 20px; }
+  .restaurant-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 15px; }
+  
+  .footer-container { padding: 0 20px; }
+  .mega-menu { top: 70px; height: calc(100vh - 70px); flex-direction: column; }
+  .menu-sidebar { width: 100%; height: auto; }
+  .menu-sidebar ul { display: flex; overflow-x: auto; white-space: nowrap; }
+  .menu-sidebar li { padding: 12px 20px; }
+  .menu-content { padding: 20px; overflow-y: auto; }
+}
+
+@media (max-width: 480px) {
+  .slider-container { height: 280px; }
+  .slide img { object-fit: cover; }
+  .search-box .title { font-size: 16px; }
+  .restaurant-grid { grid-template-columns: 1fr; }
+  .image-box { height: 200px; }
+}
 </style>
