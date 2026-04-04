@@ -5,6 +5,50 @@
     <link rel="icon" type="image/svg+xml" href="./src/assets/img/anh.logo/logo.jpg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Giao Hàng Tận Nơi</title>
+    <!-- Leaflet Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+      /* 1. Ẩn tất cả các khung hình (iframe) mà Google chèn vào */
+      iframe.goog-te-banner-frame,
+      .goog-te-banner-frame,
+      .goog-te-banner,
+      .skiptranslate > iframe,
+      iframe[id^=":"] { 
+        display: none !important; 
+        visibility: hidden !important;
+        height: 0 !important;
+        width: 0 !important;
+      }
+      
+      /* 2. Ép trang web luôn ở vị trí 0, không cho phép Google đẩy xuống */
+      html {
+        top: 0px !important;
+      }
+      body { 
+        top: 0px !important; 
+        position: static !important;
+        margin-top: 0px !important;
+      }
+      
+      /* 3. Ẩn các tooltip và hiệu ứng highlight khi di chuột vào chữ */
+      #goog-gt-tt, .goog-te-balloon-frame { 
+        display: none !important; 
+      }
+      .goog-text-highlight { 
+        background: none !important; 
+        box-shadow: none !important; 
+      }
+
+      /* 4. Giấu widget khởi tạo gốc */
+      #google_translate_element { 
+        position: absolute;
+        top: -100px;
+        left: -100px;
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
   </head>
   <body class="bg-gray-50">
     <div id="app"></div>

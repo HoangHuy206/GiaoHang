@@ -154,6 +154,9 @@ import { API_BASE_URL } from '../config';
 // Helper trim
 const clean = (v) => (v ?? '').toString().trim();
 
+import { useToastStore } from '../stores/toast';
+
+const toast = useToastStore();
 const router = useRouter();
 const isLoading = ref(false);
 
@@ -190,27 +193,27 @@ const handleRegister = async () => {
     const ve = clean(vehicle.value);
 
     if (!u || !p || !n) {
-        alert('Vui lòng nhập đủ Tên đăng nhập, Mật khẩu và Họ tên.');
+        toast.warning('Vui lòng nhập đủ Tên đăng nhập, Mật khẩu và Họ tên.');
         isLoading.value = false;
         return;
     }
     if (!em) {
-        alert('Vui lòng nhập Email.');
+        toast.warning('Vui lòng nhập Email.');
         isLoading.value = false;
         return;
     }
     if (ph.length !== 10) {
-        alert('Số điện thoại phải đúng 10 chữ số.');
+        toast.warning('Số điện thoại phải đúng 10 chữ số.');
         isLoading.value = false;
         return;
     }
     if (id.length !== 12) {
-        alert('CCCD phải đúng 12 chữ số.');
+        toast.warning('CCCD phải đúng 12 chữ số.');
         isLoading.value = false;
         return;
     }
     if (!addr || !ve) {
-        alert('Vui lòng nhập Nơi ở và Phương tiện.');
+        toast.warning('Vui lòng nhập Nơi ở và Phương tiện.');
         isLoading.value = false;
         return;
     }
@@ -244,11 +247,11 @@ const handleRegister = async () => {
       throw new Error(data.error || 'Lỗi đăng ký');
     }
 
-    alert('Đăng ký thành công! Bạn có thể đăng nhập ngay.');
+    toast.success('Đăng ký thành công! Bạn có thể đăng nhập ngay.');
     router.push('/login');
   } catch (error) {
     console.error('Lỗi quy trình đăng ký:', error);
-    alert('Đăng ký thất bại: ' + error.message);
+    toast.error('Đăng ký thất bại: ' + error.message);
   } finally {
     isLoading.value = false;
   }

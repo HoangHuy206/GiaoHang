@@ -15,6 +15,17 @@
             <div class="section-title"><span class="icon">📍</span> Thông tin giao hàng</div>
             <div class="address-box">
                <div class="user-info-row"><strong>Đơn hàng của bạn</strong></div>
+               
+               <!-- Sổ địa chỉ thêm vào gọn gàng -->
+               <div v-if="savedAddresses.length > 0" class="mb-3">
+                 <select v-model="selectedSavedAddressIndex" @change="applySavedAddress" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd; font-size: 13px;">
+                   <option :value="-1">-- Chọn từ địa chỉ đã lưu --</option>
+                   <option v-for="(addr, idx) in savedAddresses" :key="idx" :value="idx">
+                     {{ addr.label }}: {{ addr.address }}
+                   </option>
+                 </select>
+               </div>
+
                <div class="input-wrapper">
                  <textarea v-model="userInfo.address" class="address-input" rows="2" placeholder="Nhập địa chỉ chi tiết..."></textarea>
                  <div class="button-group-vertical">
@@ -44,17 +55,17 @@
             <div class="shipping-options">
               <label class="ship-option" :class="{ active: selectedShip === 'priority' }">
                 <input type="radio" value="priority" v-model="selectedShip">
-                <div class="ship-info"><div class="ship-name">Ưu tiên • 29 phút <span class="badge">Nhanh nhất</span></div><div class="ship-desc">Đơn hàng được ưu tiên giao trước</div></div>
+                <div class="ship-info"><div class="ship-name">Ưu tiên • {{ calculatedETA.split('-')[0] }} phút <span class="badge">Nhanh nhất</span></div><div class="ship-desc">Đơn hàng được ưu tiên giao trước</div></div>
                 <div class="ship-price">{{ formatCurrency(36000) }}</div>
               </label>
               <label class="ship-option" :class="{ active: selectedShip === 'fast' }">
                 <input type="radio" value="fast" v-model="selectedShip">
-                <div class="ship-info"><div class="ship-name">Nhanh • 35 phút</div></div>
+                <div class="ship-info"><div class="ship-name">Nhanh • {{ calculatedETA }} phút</div></div>
                 <div class="ship-price">{{ formatCurrency(28000) }}</div>
               </label>
               <label class="ship-option" :class="{ active: selectedShip === 'saver' }">
                 <input type="radio" value="saver" v-model="selectedShip">
-                <div class="ship-info"><div class="ship-name">Tiết kiệm • 50 phút</div></div>
+                <div class="ship-info"><div class="ship-name">Tiết kiệm • {{ parseInt(calculatedETA.split('-')[1]) + 15 }} phút</div></div>
                 <div class="ship-price">{{ formatCurrency(22000) }}</div>
               </label>
             </div>
@@ -63,56 +74,68 @@
           <div class="section-card payment-section">
             <div class="section-title"><span class="icon">💳</span> Phương thức thanh toán</div>
             <div class="payment-methods">
-              <div class="pay-method" :class="{ active: paymentMethod === 'cash' }" @click="selectPayment('cash')">
+              <div class="pay-method" :class="{ active: paymentMethod === 'cash' }" @click="paymentMethod = 'cash'">
                 <div class="radio-circle"></div><span>💵 Tiền mặt khi nhận hàng</span>
               </div>
-              <div class="pay-method" :class="{ active: paymentMethod === 'banking' }" @click="selectPayment('banking')">      
+              <div class="pay-method" :class="{ active: paymentMethod === 'banking' }" @click="paymentMethod = 'banking'">      
                 <div class="radio-circle"></div><span>🏦 Chuyển khoản</span>
               </div>
             </div>
 
-            <div v-if="paymentMethod === 'banking'" class="payment-banking-info">
-              <!-- Thêm phần nhập thông tin ngân hàng của khách để hoàn tiền -->
-              <div class="customer-bank-form section-card">
-                <div class="section-subtitle">🏦 Thông tin hoàn tiền của bạn (Nếu có sự cố)</div>
-                <div class="bank-inputs">
-                  <input v-model="customerBank.bankCode" placeholder="Mã Ngân hàng (Ví dụ: MB, VCB...)" class="bank-input">
-                  <input v-model="customerBank.accountNumber" placeholder="Số tài khoản của bạn" class="bank-input">
-                  <input v-model="customerBank.accountName" placeholder="Tên chủ tài khoản (Không dấu)" class="bank-input">
+            <div v-if="paymentMethod === 'banking'" class="payment-banking-info" style="margin-top: 15px;">
+              <!-- Ô nhập thông tin hoàn tiền -->
+              <div class="refund-info-section" style="background: #fff; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <h4 style="margin: 0 0 10px 0; font-size: 14px; color: #d35400; display: flex; align-items: center; gap: 5px;">
+                  🛡️ Thông tin hoàn tiền (Bắt buộc)
+                </h4>
+                <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
+                  Trong trường hợp không có tài xế nhận đơn, chúng tôi sẽ hoàn tiền tự động qua thông tin này.
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  <select v-model="customerBank.bankCode" style="padding: 8px; border-radius: 6px; border: 1px solid #ddd; font-size: 13px;">
+                    <option value="">-- Chọn ngân hàng --</option>
+                    <option value="MB">MB Bank (Quân Đội)</option>
+                    <option value="VCB">Vietcombank</option>
+                    <option value="ICB">Vietinbank</option>
+                    <option value="BIDV">BIDV</option>
+                    <option value="TCB">Techcombank</option>
+                    <option value="ACB">ACB</option>
+                    <option value="VPB">VPBank</option>
+                    <option value="VIB">VIB</option>
+                    <option value="TPB">TPBank</option>
+                  </select>
+                  <input type="text" v-model="customerBank.accountNumber" placeholder="Số tài khoản nhận tiền" style="padding: 8px; border-radius: 6px; border: 1px solid #ddd; font-size: 13px;">
+                  <input type="text" v-model="customerBank.accountName" placeholder="Tên chủ tài khoản (In hoa không dấu)" style="padding: 8px; border-radius: 6px; border: 1px solid #ddd; font-size: 13px;">
                 </div>
-                <p class="hint-text-small">*Dùng để shop hoàn tiền tự động nếu đơn hàng quá 1 tiếng không xử lý.</p>
               </div>
 
-              <div v-if="!randomOrderCode" class="qr-instruction">
+              <div v-if="!randomOrderCode" class="qr-instruction" style="background: #fff8e1; border: 1px solid #ffca28; padding: 15px; border-radius: 8px; text-align: center; color: #856404; font-size: 14px;">
                 <p>💡 Bạn vui lòng nhấn nút <strong>"ĐẶT ĐƠN HÀNG"</strong> bên dưới để lấy mã QR thanh toán.</p>
               </div>
 
-              <div v-else class="qr-container">
-                <div v-if="paymentStatus === 'pending'" class="qr-pending">
-                  <div class="qr-header">
-                     Quét mã để thanh toán
-                     <span class="timer" :class="{'urgent': qrTimeLeft < 60}">Hết hạn sau: {{ formatTime(qrTimeLeft) }}</span>   
+              <div v-else class="qr-container" style="background: #f8f9fa; padding: 25px; border-radius: 15px; text-align: center; border: 1px dashed #00b14f; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                <div v-if="paymentStatus === 'pending'">
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-weight: bold; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                     <span style="color: #333;">Quét mã thanh toán</span>
+                     <span style="color: #d63031; font-family: 'Courier New', monospace; background: #fff1f0; padding: 2px 8px; border-radius: 4px; border: 1px solid #ffa39e;">Hết hạn sau: {{ formatTime(qrTimeLeft) }}</span>   
                   </div>
-                  <div class="qr-body">
-                     <img :src="qrCodeUrl" alt="QR Code" class="qr-img" />
-                     <div class="qr-details">
-                        <p class="qr-note">Tổng tiền: <strong class="price-highlight">{{ formatCurrency(finalTotal) }}</strong></p>
-                        <p class="qr-note">Nội dung CK: <strong class="code-highlight">{{ randomOrderCode }}</strong></p>        
-                     </div>
+                  
+                  <div style="display: flex; justify-content: center; margin: 20px 0;">
+                    <img :src="qrCodeUrl" alt="QR Code" style="width: 220px; height: 220px; background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid #eee;" />
+                  </div>
 
-                     <div class="auto-check-notify">
-                       <span class="pulse-dot"></span> Đang tự động chờ nhận tiền...
-                     </div>
-
-                     <button class="refresh-qr" @click="generateNewQR(currentOrderId, randomOrderCode)">🔄 Lấy mã mới</button>
-                     <p class="hint-text">*Hệ thống tự động cập nhật và chuyển trang khi nhận tiền</p>
+                  <div style="margin-top: 15px; font-size: 15px; background: white; padding: 15px; border-radius: 10px; border: 1px solid #eee;">
+                     <p style="margin: 5px 0; color: #666;">Số tiền: <strong style="color: #00b14f; font-size: 18px;">{{ formatCurrency(finalTotal) }}</strong></p>
+                     <p style="margin: 5px 0; color: #666;">Nội dung: <strong style="color: #2980b9; font-size: 18px; letter-spacing: 1px;">{{ randomOrderCode }}</strong></p>        
+                  </div>
+                  <div style="margin-top: 15px; font-size: 14px; color: #e67e22; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <div class="loading-dot"></div> Đang chờ nhận tiền...
                   </div>
                 </div>
-
-                <div v-else-if="paymentStatus === 'success'" class="qr-success">
-                   <div class="check-icon-circle">✓</div>
-                   <h3>Thanh toán thành công!</h3>
-                   <p>Đơn hàng đã được xác nhận. Đang chuyển trang...</p>
+                <div v-else-if="paymentStatus === 'success'" style="color: #00b14f; font-weight: bold; padding: 30px 0;">
+                   <div style="font-size: 50px; margin-bottom: 10px;">✅</div>
+                   <h3 style="margin: 0; font-size: 22px;">Thanh toán thành công!</h3>
+                   <p style="color: #666; font-weight: normal; margin-top: 10px;">Đơn hàng của bạn đang được xử lý.</p>
                 </div>
               </div>
             </div>
@@ -121,26 +144,26 @@
 
         <div class="right-column">
           <div class="order-summary-card">
-            <h3>Tóm tắt đơn hàng</h3>
-            <div v-if="items.length > 0" class="order-items-list">
-              <div v-for="item in items" :key="item.id" class="summary-item">
-                <div class="item-qty">{{ item.quantity }}x</div>
-                <div class="item-name">{{ item.name }} <span v-if="item.note" class="item-note">({{ item.note }})</span></div> 
-                <div class="item-price">{{ formatCurrency(item.price * item.quantity) }}</div>
+            <h3 style="margin-top: 0; font-size: 18px; margin-bottom: 15px;">Tóm tắt đơn hàng</h3>
+            <div v-if="items.length > 0" class="order-items-list" style="max-height: 300px; overflow-y: auto;">
+              <div v-for="item in items" :key="item.id" class="summary-item" style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px;">
+                <div style="display: flex; gap: 10px;">
+                    <span style="font-weight: bold; color: #00b14f;">{{ item.quantity }}x</span>
+                    <span>{{ item.name }}</span>
+                </div>
+                <div style="font-weight: 600;">{{ formatCurrency(item.price * item.quantity) }}</div>
               </div>
             </div>
-            <div v-else class="text-gray-500 py-4 italic">Giỏ hàng trống</div>
 
-            <div class="divider"></div>
-            <div class="price-row"><span>Tạm tính</span><span>{{ formatCurrency(subTotal) }}</span></div>
-            <div class="price-row"><span>Phí giao hàng</span><span>{{ formatCurrency(shipPrice) }}</span></div>
-             <div class="price-row discount" v-if="selectedShip === 'saver'"><span>Khuyến mãi vận chuyển</span><span>-14.000₫</span></div>
-            <div class="divider"></div>
-            <div class="total-row">
+            <div style="height: 1px; background: #eee; margin: 15px 0;"></div>
+            <div class="price-row" style="display: flex; justify-content: space-between; margin-bottom: 10px; color: #555;"><span>Tạm tính</span><span>{{ formatCurrency(subTotal) }}</span></div>
+            <div class="price-row" style="display: flex; justify-content: space-between; margin-bottom: 10px; color: #555;"><span>Phí giao hàng</span><span>{{ formatCurrency(shipPrice) }}</span></div>
+            <div class="price-row" v-if="selectedShip === 'saver'" style="display: flex; justify-content: space-between; margin-bottom: 10px; color: #d63031;"><span>Khuyến mãi ship</span><span>-14.000₫</span></div>
+            
+            <div style="height: 1px; background: #eee; margin: 15px 0;"></div>
+            <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; color: #333;">
               <span>Tổng cộng</span>
-              <span class="total-price" :class="{'text-green-500': paymentStatus === 'success'}">
-                {{ paymentStatus === 'success' ? '0đ (Đã thanh toán)' : formatCurrency(finalTotal) }}
-              </span>
+              <span style="color: #00b14f; font-size: 22px;">{{ formatCurrency(finalTotal) }}</span>
             </div>
 
             <button class="place-order-btn" @click="submitOrder" :disabled="dangXuLy || items.length === 0">
@@ -151,15 +174,16 @@
       </div>
     </div>
 
+    <!-- Map Modal -->
     <div v-if="showMapModal" class="map-modal-overlay" @click.self="closeMap">
       <div class="map-modal-content">
         <div class="map-header"><h3>Chọn vị trí giao hàng</h3><button class="close-map-btn" @click="closeMap">×</button></div> 
         <div class="map-body">
           <div id="map-selection" style="width: 100%; height: 400px; background: #eee;"></div>
-          <div class="selected-address-bar" v-if="tempSelectedAddress">
+          <div class="selected-address-bar" v-if="tempSelectedAddress" style="padding: 10px 20px; background: white; border-top: 1px solid #eee; font-weight: 500;">
              📍 {{ tempSelectedAddress }}
           </div>
-          <div class="map-footer">
+          <div class="map-footer" style="padding: 15px; text-align: center; border-top: 1px solid #eee;">
             <button class="confirm-map-btn" @click="confirmMapSelection">Xác nhận vị trí này</button>
           </div>
         </div>
@@ -175,13 +199,16 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import { SOCKET_URL, API_BASE_URL } from '../config';
 import { useToastStore } from '../stores/toast';
+import { useAuthStore } from '../stores/auth';
+import { useCartStore } from '../stores/cart';
 
 export default {
   name: "ThanhToan",
   setup() {
     const router = useRouter();
     const toast = useToastStore();
-
+    const auth = useAuthStore();
+    const cartStore = useCartStore();
     const socket = io(SOCKET_URL);
 
     const items = ref([]);
@@ -191,376 +218,221 @@ export default {
     const showMapModal = ref(false);
     const tempSelectedAddress = ref('');
     const dangXuLy = ref(false);
-    const currentOrderId = ref(null);
-
-    // Tọa độ mặc định người nhận (Hà Nội)
     const selectedCoords = ref({ lat: 21.0285, lng: 105.8542 });
-
-    let mapInstance = null;
-    let markerInstance = null;
-
-    const bankId = 'MB';
-    const accountNo = '0396222614';
-
     const randomOrderCode = ref('');
     const qrTimeLeft = ref(600);
-    let timerInterval = null;
-    let checkInterval = null;
     const paymentStatus = ref('pending');
-
     const userInfo = reactive({ name: '', phone: '', address: '', username: '' });
     const customerBank = reactive({ bankCode: '', accountNumber: '', accountName: '' });
     const shippingRates = { priority: 36000, fast: 28000, saver: 22000 };
+    
+    let mapInstance = null, markerInstance = null, timerInterval = null, checkInterval = null;
 
-    // HÀM XỬ LÝ KHI THANH TOÁN THÀNH CÔNG (Dùng chung cho cả Socket và Polling)
-    const onPaymentSuccess = () => {
-        if (paymentStatus.value === 'success') return; // Tránh chạy 2 lần
+    // Address Book Features
+    const savedAddresses = ref([]);
+    const selectedSavedAddressIndex = ref(-1);
 
-        paymentStatus.value = 'success';
-        if (timerInterval) clearInterval(timerInterval);
-        if (checkInterval) clearInterval(checkInterval);
-
-        // Phát âm thanh Ting Ting khi thanh toán thành công
-        const audio = new Audio('/sounds/Download-_1_.mp3');
-        audio.play().catch(err => console.error("Không thể phát âm thanh:", err));
-
-        // Xóa sạch giỏ hàng
-        localStorage.removeItem('tempCart');
-        items.value = [];
-
-        // Tự động chuyển hướng sau 3 giây để người dùng kịp thấy thông báo thành công
-        setTimeout(() => {
-            router.push('/theodoidonhang');
-        }, 3000);
+    const fetchSavedAddresses = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            const res = await axios.get(`${API_BASE_URL}/api/user/addresses`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            savedAddresses.value = res.data;
+            const dIdx = savedAddresses.value.findIndex(a => a.is_default);
+            if (dIdx !== -1) { 
+                selectedSavedAddressIndex.value = dIdx; 
+                applySavedAddress(); 
+            }
+        } catch (e) { console.error("Lấy địa chỉ lỗi:", e); }
     };
+
+    const applySavedAddress = () => {
+        if (selectedSavedAddressIndex.value === -1) return;
+        const addr = savedAddresses.value[selectedSavedAddressIndex.value];
+        userInfo.address = addr.address;
+        if (addr.lat && addr.lng) {
+            selectedCoords.value = { lat: Number(addr.lat), lng: Number(addr.lng) };
+        }
+    };
+
+    const calculatedETA = computed(() => {
+        if (!shopInfo.value || !selectedCoords.value.lat) return '30-45';
+        const R = 6371;
+        const dLat = (selectedCoords.value.lat - shopInfo.value.lat) * Math.PI / 180;
+        const dLon = (selectedCoords.value.lng - shopInfo.value.lng) * Math.PI / 180;
+        const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(shopInfo.value.lat*Math.PI/180)*Math.cos(selectedCoords.value.lat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+        const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const totalMin = Math.round((shopInfo.value.average_prep_time || 15) + (distance / 0.5));
+        return `${totalMin}-${totalMin + 10}`;
+    });
+
+    const onPaymentSuccess = () => {
+        if (paymentStatus.value === 'success') return;
+        paymentStatus.value = 'success';
+        clearInterval(timerInterval); clearInterval(checkInterval);
+        new Audio('/sounds/Download-_1_.mp3').play().catch(() => {});
+        
+        // --- XÓA MÓN KHỎI GIỎ HÀNG CHÍNH ---
+        const paidProductIds = items.value.map(i => i.productId || i.id);
+        cartStore.items = cartStore.items.filter(item => !paidProductIds.includes(item.productId));
+        cartStore.saveToStorage();
+
+        localStorage.removeItem('tempCart');
+        toast.success("Thanh toán thành công!");
+        setTimeout(() => router.push('/theodoidonhang'), 2000);
+    };
+
     onMounted(async () => {
-      // Lắng nghe sự kiện thanh toán thành công tức thì qua Socket
-      socket.on('payment_success', (data) => {
-          console.log("🔔 Nhận tín hiệu thanh toán thành công tức thì:", data);
-          onPaymentSuccess();
-      });
-
-      // Load Leaflet
-      if (!document.getElementById('leaflet-css')) {
-        const link = document.createElement('link'); link.id = 'leaflet-css'; link.rel = 'stylesheet'; link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(link);
-      }
-      if (!document.getElementById('leaflet-js')) {
-        const script = document.createElement('script'); script.id = 'leaflet-js'; script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; document.head.appendChild(script);
-      }
-
+      socket.on('payment_success', onPaymentSuccess);
       const storedItems = localStorage.getItem('tempCart');
       if (storedItems) {
           items.value = JSON.parse(storedItems);
-          // Lấy shop info thực tế
-          const shopId = items.value[0].shopId;
-          try {
-              const res = await axios.get(`${API_BASE_URL}/api/shops/${shopId}`);
-              shopInfo.value = res.data;
-          } catch (err) {
-              console.error("Lỗi tải thông tin quán:", err);
-          }
+          try { const res = await axios.get(`${API_BASE_URL}/api/shops/${items.value[0].shopId}`); shopInfo.value = res.data; } catch(e){}
       }
-
-      // [EDITED] Read from 'user' key as per Auth Store
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        const u = JSON.parse(storedUser);
-        userInfo.name = u.fullname || u.HoTen || 'Khách hàng';
-        userInfo.phone = u.phone || '';
-        userInfo.username = u.username || 'guest';
-        if(u.address) userInfo.address = u.address; // Lấy địa chỉ lưu sẵn
-      }
+      const u = JSON.parse(localStorage.getItem('user') || '{}');
+      userInfo.name = u.fullname || u.HoTen || ''; userInfo.phone = u.phone || ''; userInfo.address = u.address || '';
+      fetchSavedAddresses();
     });
 
-    const subTotal = computed(() => {
-        return items.value.reduce((sum, item) => {
-            const price = Number(item.price) || 0;
-            const quantity = Number(item.quantity) || 1;
-            return sum + (price * quantity);
-        }, 0);
-    });
+    onUnmounted(() => { clearInterval(timerInterval); clearInterval(checkInterval); });
 
-    const shipPrice = computed(() => Number(shippingRates[selectedShip.value]) || 0);
-
-    const finalTotal = computed(() => {
-        let total = subTotal.value + shipPrice.value;
-        // Trừ khuyến mãi vận chuyển (14.000đ) chỉ khi chọn gói 'saver'
-        if (selectedShip.value === 'saver') {
-            total = Math.max(0, total - 14000);
-        }
-        return total;
-    });
-
-    const formatCurrency = (val) => {
-        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
-    };        
+    const subTotal = computed(() => items.value.reduce((s, i) => s + (i.price * i.quantity), 0));
+    const shipPrice = computed(() => shippingRates[selectedShip.value]);
+    const finalTotal = computed(() => (subTotal.value + shipPrice.value - (selectedShip.value === 'saver' ? 14000 : 0)));
+    const formatCurrency = (v) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(v);
 
     const qrCodeUrl = computed(() => {
-        let bId = shopInfo.value?.bank_code || 'MB';
-        const accNo = shopInfo.value?.bank_account || '0396222614';
-
-        // Chuẩn hóa mã VietinBank cho SePay
-        if (bId.toUpperCase() === 'ICB') bId = 'VietinBank';
-
         if (!randomOrderCode.value) return '';
-
-        const amount = Math.round(finalTotal.value);
-        return `https://qr.sepay.vn/img?bank=${bId}&acc=${accNo}&template=compact&amount=${amount}&des=${randomOrderCode.value}`;
+        let b = shopInfo.value?.bank_code || 'MB';
+        if (b.toUpperCase() === 'ICB') b = 'VietinBank';
+        return `https://qr.sepay.vn/img?bank=${b}&acc=${shopInfo.value?.bank_account || '0396222614'}&template=compact&amount=${Math.round(finalTotal.value)}&des=${randomOrderCode.value}`;
     });
-            const checkPaymentStatus = async () => {
-                try {
-                    // Thêm timestamp ?t= để chống cache trình duyệt
-                    const res = await axios.get(`${API_BASE_URL}/api/payment/check/${randomOrderCode.value}?t=${Date.now()}`);
-                    if (res.data.paid) {
-                        onPaymentSuccess();
-                        return true;
-                    }
-                } catch (e) {
-                    console.error("Lỗi kiểm tra thanh toán:", e);
-                }
-                return false;
-            };
-        
-            const startPollingPayment = () => {
-                if (checkInterval) clearInterval(checkInterval);
-                checkInterval = setInterval(async () => {
-                    const isPaid = await checkPaymentStatus();
-                    if (isPaid) {
-                        clearInterval(checkInterval);
-                    }
-                }, 3000); 
-            };
-        
-            const generateNewQR = async (orderId, orderCode) => {
-              randomOrderCode.value = orderCode;
-              paymentStatus.value = 'pending';
-              qrTimeLeft.value = 600;
 
-              socket.emit('join_room', `order_${orderId}`);
-              // Đã xóa API /api/payment/register vì server không cần đăng ký trước
-
-              if (timerInterval) clearInterval(timerInterval);              timerInterval = setInterval(() => {
-                if (qrTimeLeft.value > 0) qrTimeLeft.value--;
-                else {
-                    toast.error("Hết thời gian thanh toán!");
-                    location.reload();
-                }
-              }, 1000);
-        
-              startPollingPayment();
-            };
-    
-        onUnmounted(() => { 
-            if (timerInterval) clearInterval(timerInterval);
-            if (checkInterval) clearInterval(checkInterval);
-        });
-    
-        const selectPayment = (method) => {
-          paymentMethod.value = method;
-          // Không tự động tạo QR ở đây nữa
-          paymentStatus.value = 'pending';
-        };
-
-    const handleConfirmPaid = () => {
-        paymentStatus.value = 'processing';
-        
-        // Kiểm tra ngay lập tức
-        checkPaymentStatus().then(paid => {
-             if(paid) return;
-             
-             // Nếu chưa có, poll mỗi 2 giây
-             const checkInterval = setInterval(async () => {
-                 if (paymentStatus.value !== 'processing') {
-                     clearInterval(checkInterval);
-                     return;
-                 }
-                 
-                 const isPaid = await checkPaymentStatus();
-                 if (isPaid) {
-                     clearInterval(checkInterval);
-                 }
-             }, 2000);
-             
-             // Timeout sau 60s nếu không thấy tiền (tránh treo vô hạn)
-             setTimeout(() => {
-                 if (paymentStatus.value === 'processing') {
-                     toast.error("Hệ thống chưa nhận được tiền. Vui lòng thử lại hoặc liên hệ hỗ trợ.");
-                     paymentStatus.value = 'pending';
-                     clearInterval(checkInterval);
-                 }
-             }, 60000);
-        });
-    };
-
-    const formatTime = (seconds) => {
-      const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-      const s = (seconds % 60).toString().padStart(2, '0');
-      return `${m}:${s}`;
-    };
-
-    // --- MAP LOGIC ---
-    const setHardLocation = () => {
-      userInfo.address = "Trường Cao Đẳng Công Nghệ Cao Hà Nội";
-      selectedCoords.value = { lat: 21.0464, lng: 105.7480 };
-      toast.info("Đã chọn vị trí: Trường Cao Đẳng Công Nghệ Cao Hà Nội");
-    };
-
-    const openMapModal = () => {
-      showMapModal.value = true;
-      nextTick(() => {
-        initSelectionMap();
-      });
-    };
-
-    const initSelectionMap = () => {
-        if (mapInstance) {
-            mapInstance.remove();
-        }
-
-        mapInstance = L.map('map-selection').setView([selectedCoords.value.lat, selectedCoords.value.lng], 15);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance);
-
-        markerInstance = L.marker([selectedCoords.value.lat, selectedCoords.value.lng], { draggable: true }).addTo(mapInstance);
-
-        const updateAddr = async (lat, lng) => {
-            selectedCoords.value = { lat, lng };
+    const generateNewQR = async (orderId, orderCode) => {
+        randomOrderCode.value = orderCode; paymentStatus.value = 'pending'; qrTimeLeft.value = 600;
+        socket.emit('join_room', `order_${orderId}`);
+        timerInterval = setInterval(() => { if (qrTimeLeft.value > 0) qrTimeLeft.value--; else location.reload(); }, 1000);
+        checkInterval = setInterval(async () => { 
             try {
-                const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);  
-                tempSelectedAddress.value = res.data.display_name;
+                const res = await axios.get(`${API_BASE_URL}/api/payment/check/${orderCode}?t=${Date.now()}`);
+                if (res.data && res.data.paid) onPaymentSuccess();
             } catch (e) {
-                tempSelectedAddress.value = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                // Im lặng khi lỗi kết nối để tránh spam console
+                console.log("Đang kết nối lại với máy chủ thanh toán...");
             }
-        };
-
-        mapInstance.on('click', (e) => {
-            markerInstance.setLatLng(e.latlng);
-            updateAddr(e.latlng.lat, e.latlng.lng);
-        });
-
-        markerInstance.on('dragend', (e) => {
-            const pos = e.target.getLatLng();
-            updateAddr(pos.lat, pos.lng);
-        });
+        }, 3000);
     };
 
-    const confirmMapSelection = () => {
-        if (tempSelectedAddress.value) {
-            userInfo.address = tempSelectedAddress.value;
-        }
-        showMapModal.value = false;
-    };
-
-    const closeMap = () => {
-      showMapModal.value = false;
-      if (mapInstance) {
-          mapInstance.remove();
-          mapInstance = null;
-      }
-    };
-
-    // --- HÀM GỬI ĐƠN HÀNG (ĐÃ SỬA) ---
     const submitOrder = async () => {
-       if(items.value.length === 0) return toast.warning("Giỏ hàng trống!");
-       if(!userInfo.address) return toast.warning("Vui lòng nhập địa chỉ!");
-
-       // Nếu đang hiện QR và chưa thanh toán xong thì không cho bấm đặt hàng lại
-       if (paymentMethod.value === 'banking' && randomOrderCode.value && paymentStatus.value === 'pending') {
-           return toast.warning("Vui lòng hoàn tất thanh toán chuyển khoản phía trên!");
+       if(!userInfo.address) return toast.warning("Vui lòng nhập địa chỉ giao hàng!");
+       
+       if (paymentMethod.value === 'banking') {
+         if (!customerBank.bankCode || !customerBank.accountNumber || !customerBank.accountName) {
+           return toast.warning("Vui lòng nhập đầy đủ thông tin ngân hàng để phòng trường hợp hoàn tiền!");
+         }
        }
 
        dangXuLy.value = true;
-
        try {
-           const storedUserStr = localStorage.getItem('user');
-           const userObj = storedUserStr ? JSON.parse(storedUserStr) : null;
-           const userId = userObj ? userObj.id : null;
-
-           if (!userId) {
-               toast.error("Vui lòng đăng nhập lại!");      
-               router.push('/login');
-               return;
-           }
-
-
-           const shopId = items.value[0].shopId;
-           const apiPayload = {
-               userId: userId,
-               shopId: shopId,
-               items: items.value.map(i => ({
-                   productId: i.id || i.productId,
-                   quantity: i.quantity,
-                   price: i.price
-               })),
-               totalPrice: finalTotal.value,
-               itemsPrice: subTotal.value,
-               deliveryFee: shipPrice.value,
-               discount: selectedShip.value === 'saver' ? 14000 : 0,
-               deliveryAddress: userInfo.address,
-               deliveryLat: selectedCoords.value.lat,
-               deliveryLng: selectedCoords.value.lng,
+           const res = await axios.post(`${API_BASE_URL}/api/orders`, {
+               userId: auth.user.id, shopId: items.value[0].shopId,
+               items: items.value.map(i => ({ productId: i.id || i.productId, quantity: i.quantity, price: i.price, name: i.name })),
+               totalPrice: finalTotal.value, deliveryAddress: userInfo.address,
+               deliveryLat: selectedCoords.value.lat, deliveryLng: selectedCoords.value.lng,
+               paymentMethod: paymentMethod.value,
                customerBankCode: customerBank.bankCode,
                customerBankAccount: customerBank.accountNumber,
                customerBankName: customerBank.accountName
-           };
-
-           const res = await axios.post(`${API_BASE_URL}/api/orders`, apiPayload);
-
+           });
            if (res.data.success) {
-               const orderId = res.data.orderId;
-               currentOrderId.value = orderId;
-               const maDonHang = res.data.orderCode; 
-               randomOrderCode.value = maDonHang; // Dùng mã Dxxx thật từ Server
-
-               if (paymentMethod.value === 'banking') {
-                   // Hiện QR với mã thật Dxxx
-                   await generateNewQR(orderId, maDonHang);
-                   toast.info("Vui lòng thanh toán qua mã QR phía dưới.");
-                   nextTick(() => {
-                       const el = document.querySelector('.qr-container');
-                       if (el) el.scrollIntoView({ behavior: 'smooth' });
-                   });
-               } else {
-                   // Tiền mặt: Gửi thông báo socket và chuyển trang
-                   const socketData = {
-                       ma_don_hang: maDonHang,
-                       orderId: orderId,
-                       ten_khach_hang: userInfo.name,
-                       ten_mon_an: items.value.map(item => `${item.name} (${item.quantity})`).join(', '),
-                       tong_tien: formatCurrency(finalTotal.value),
-                       ten_quan: shopInfo.value?.name || 'Cửa hàng',
-                       dia_chi_giao: userInfo.address,
-                       lat_tra: selectedCoords.value.lat,
-                       lng_tra: selectedCoords.value.lng
-                   };
-                   socket.emit('place_order', socketData);
-
-                   toast.success("Đặt hàng thành công! Mã đơn: " + maDonHang);
-                   localStorage.removeItem('tempCart');
-                   router.push('/theodoidonhang');
-               }
+               if (paymentMethod.value === 'banking') await generateNewQR(res.data.orderId, res.data.orderCode);
+               else { toast.success("Đặt đơn thành công!"); router.push('/theodoidonhang'); }
            }
-       } catch (error) {
-           console.error("Lỗi đặt hàng:", error);
-           toast.error("Lỗi: " + (error.response?.data?.message || error.message));
-       } finally {
-           dangXuLy.value = false;
-       }
+       } catch (e) { toast.error("Lỗi đặt đơn!"); } finally { dangXuLy.value = false; }
     };
 
+    const setHardLocation = () => { 
+        if(auth.user && auth.user.address) {
+            userInfo.address = auth.user.address; 
+            toast.info("Đã dùng địa chỉ từ hồ sơ của bạn"); 
+        } else {
+            toast.warning("Hồ sơ của bạn chưa có địa chỉ. Vui lòng nhập tay hoặc chọn trên bản đồ.");
+        }
+    };
+    
+    const openMapModal = () => { 
+        showMapModal.value = true; 
+        setTimeout(() => {
+            initSelectionMap();
+        }, 300);
+    };
+
+    const initSelectionMap = () => {
+        if (typeof L === 'undefined') {
+            toast.error("Không thể tải thư viện Bản đồ. Vui lòng kiểm tra kết nối mạng.");
+            return;
+        }
+        if (mapInstance) mapInstance.remove();
+        
+        mapInstance = L.map('map-selection').setView([selectedCoords.value.lat, selectedCoords.value.lng], 16);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(mapInstance);
+        
+        markerInstance = L.marker([selectedCoords.value.lat, selectedCoords.value.lng], { draggable: true }).addTo(mapInstance);
+        
+        mapInstance.on('click', async (e) => {
+            const { lat, lng } = e.latlng;
+            markerInstance.setLatLng([lat, lng]);
+            updateTempAddress(lat, lng);
+        });
+
+        markerInstance.on('dragend', async (e) => {
+            const p = e.target.getLatLng(); 
+            updateTempAddress(p.lat, p.lng);
+        });
+
+        updateTempAddress(selectedCoords.value.lat, selectedCoords.value.lng);
+    };
+
+    const updateTempAddress = async (lat, lng) => {
+        selectedCoords.value = { lat, lng };
+        try {
+            const r = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=vi`);
+            tempSelectedAddress.value = r.data.display_name;
+        } catch (e) {
+            tempSelectedAddress.value = `Tọa độ: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        }
+    };
+
+    const confirmMapSelection = () => { 
+        if(tempSelectedAddress.value) {
+            userInfo.address = tempSelectedAddress.value; 
+            toast.success("Đã cập nhật địa chỉ từ bản đồ");
+        }
+        showMapModal.value = false; 
+    };
+
+    const closeMap = () => { 
+        showMapModal.value = false; 
+        if(mapInstance) mapInstance.remove(); 
+    };
+
+    const formatTime = (s) => `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
+
     return {
-      items, userInfo, customerBank, selectedShip, paymentMethod,
-      subTotal, finalTotal, shipPrice, formatCurrency,
-      setHardLocation, submitOrder, selectPayment,
-      qrCodeUrl, qrTimeLeft, formatTime, generateNewQR, randomOrderCode,
-      showMapModal, openMapModal, closeMap, tempSelectedAddress, confirmMapSelection,
-      paymentStatus, selectedCoords, dangXuLy, currentOrderId
+      items, userInfo, customerBank, selectedShip, paymentMethod, subTotal, finalTotal, shipPrice, formatCurrency,
+      qrCodeUrl, qrTimeLeft, formatTime, randomOrderCode, paymentStatus, selectedCoords, dangXuLy,
+      showMapModal, openMapModal, closeMap, tempSelectedAddress, confirmMapSelection, setHardLocation, submitOrder,
+      savedAddresses, selectedSavedAddressIndex, applySavedAddress, calculatedETA
     };
   }
 }
 </script>
 
 <style scoped>
-/* CSS Giữ nguyên như cũ */
 .checkout-page-wrapper { background-color: #f0f2f5; min-height: 100vh; padding: 40px 20px; font-family: 'Segoe UI', sans-serif; }
 .checkout-container-desktop { max-width: 1100px; margin: 0 auto; }
 .checkout-header { margin-bottom: 20px; display: flex; align-items: center; }
@@ -572,180 +444,63 @@ export default {
 .right-column { flex: 1; position: sticky; top: 20px; }
 .section-card, .order-summary-card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 24px; margin-bottom: 20px; }
 .section-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; color: #333; }
-.icon { font-size: 20px; }
 .address-box { background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee; }
 .user-info-row { font-weight: 600; margin-bottom: 10px; color: #333; font-size: 16px; }
 .input-wrapper { display: flex; gap: 10px; align-items: flex-start; }
-.address-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; resize: none; font-family: inherit; transition: background 0.3s; }
-.address-input:focus { border-color: #00b14f; outline: none; background: white; }
+.address-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; resize: none; font-family: inherit; }
 .button-group-vertical { display: flex; flex-direction: column; gap: 8px; }
-.detect-btn, .map-btn { display: flex; align-items: center; justify-content: flex-start; white-space: nowrap; height: 36px; padding: 0 15px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; transition: 0.2s; width: 160px; border: 1px solid #ccc; background: white; }
+.detect-btn, .map-btn { display: flex; align-items: center; white-space: nowrap; padding: 0 15px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; height: 36px; border: 1px solid #ccc; background: white; width: 160px; }
 .detect-btn { border-color: #ff4757; color: #ff4757; }
-.detect-btn:hover { background: #fff0f1; }
 .map-btn { border-color: #2980b9; color: #2980b9; }
-.map-btn:hover { background: #ebf5fb; }
-.btn-text { margin-left: 8px; }
-.map-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; display: flex; justify-content: center; align-items: center; }
-.map-modal-content { background: white; width: 900px; max-width: 95%; height: 80vh; border-radius: 12px; overflow: hidden; box-shadow: 0 5px 20px rgba(0,0,0,0.3); display: flex; flex-direction: column; }
-.map-header { padding: 15px 20px; background: #f0f2f5; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ddd; }
-.map-header h3 { margin: 0; font-size: 18px; }
-.close-map-btn { background: none; border: none; font-size: 28px; cursor: pointer; line-height: 1; }
-.map-body { flex: 1; display: flex; flex-direction: column; position: relative; padding: 0; }
-.interactive-map-container { flex: 1; width: 100%; background: #eee; }
-.selected-address-bar { padding: 10px 20px; background: white; border-top: 1px solid #eee; font-weight: 500; color: #333; }    
-.map-footer { padding: 15px; background: #f9f9f9; border-top: 1px solid #eee; text-align: center; }
-.confirm-map-btn { background: #00b14f; color: white; border: none; padding: 12px 30px; font-weight: bold; font-size: 16px; border-radius: 6px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,177,79,0.3); }
-.confirm-map-btn:disabled { background: #ccc; cursor: not-allowed; box-shadow: none; }
-.confirm-map-btn:hover:not(:disabled) { background: #009e39; }
 .shipping-options { display: flex; flex-direction: column; gap: 12px; }
 .ship-option { display: flex; align-items: center; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: 0.2s; }
-.ship-option:hover { border-color: #00b14f; }
 .ship-option.active { border-color: #00b14f; background-color: #f0fbf4; box-shadow: 0 0 0 1px #00b14f; }
-.ship-option input { margin-right: 15px; width: 18px; height: 18px; accent-color: #00b14f; }
-.ship-info { flex: 1; }
-.ship-name { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.ship-info { flex: 1; margin-left: 10px; }
+.ship-name { font-weight: 600; font-size: 15px; }
 .badge { font-size: 11px; background: #ff4757; color: white; padding: 2px 6px; border-radius: 4px; }
 .ship-desc { font-size: 13px; color: #666; margin-top: 4px; }
 .ship-price { font-weight: 700; color: #333; }
-.payment-methods { display: flex; gap: 15px; flex-wrap: wrap; }
-.pay-method { flex: 1; min-width: 200px; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: 0.2s; }
-.pay-method:hover { border-color: #00b14f; }
+.payment-methods { display: flex; gap: 15px; }
+.pay-method { flex: 1; border: 1px solid #e0e0e0; padding: 15px; border-radius: 8px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .pay-method.active { border-color: #00b14f; background: #f0fbf4; font-weight: 600; }
-.radio-circle { width: 18px; height: 18px; border: 2px solid #ccc; border-radius: 50%; position: relative; }
-.pay-method.active .radio-circle { border-color: #00b14f; }
-.pay-method.active .radio-circle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 8px; height: 8px; background: #00b14f; border-radius: 50%; }
-
-/* Banking info instruction */
-.payment-banking-info { margin-top: 15px; }
-.qr-instruction { background: #fff8e1; border: 1px solid #ffca28; padding: 15px; border-radius: 8px; text-align: center; color: #856404; font-size: 14px; animation: fadeIn 0.5s; }
-
-/* QR Code Section */
-.qr-container { background: #f8f9fa; padding: 20px; border-radius: 12px; text-align: center; border: 1px dashed #ccc; min-height: 350px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-.qr-header { font-weight: bold; margin-bottom: 15px; width: 100%; display: flex; justify-content: space-between; align-items: center; }
-.timer { color: #d63031; font-family: monospace; font-size: 16px; background: white; padding: 4px 8px; border-radius: 4px; border: 1px solid #eee; }
-.timer.urgent { color: red; font-weight: bold; animation: pulse 1s infinite; }
-.qr-body { display: flex; flex-direction: column; align-items: center; width: 100%; }
-.qr-img { width: 220px; height: 220px; object-fit: contain; background: white; padding: 5px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; transition: transform 0.2s; }
-.qr-img:hover { transform: scale(1.02); }
-.qr-details { margin: 15px 0; background: white; padding: 10px; border-radius: 6px; width: 100%; max-width: 300px; border: 1px solid #eee; }
-.qr-note { margin: 5px 0; font-size: 14px; color: #555; }
-.price-highlight { color: #00b14f; font-size: 16px; }
-.code-highlight { color: #2980b9; font-size: 16px; letter-spacing: 1px; }
-
-/* CSS THÊM CHO THÔNG BÁO TỰ ĐỘNG CHỜ TIỀN */
-.auto-check-notify { margin-top: 15px; font-size: 15px; font-weight: 600; color: #e67e22; display: flex; align-items: center; gap: 8px; animation: fadeInOut 2s infinite; }
-.pulse-dot { width: 10px; height: 10px; background-color: #e67e22; border-radius: 50%; display: inline-block; animation: pulseDot 1.5s infinite; }
-@keyframes pulseDot { 0% { transform: scale(0.8); opacity: 0.5; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.8); opacity: 0.5; } }
-@keyframes fadeInOut { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
-
-/* BUTTONS */
-.refresh-qr { background: #555; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; transition: 0.2s; }
-.refresh-qr:hover { background: #333; }
-.hint-text { font-size: 12px; color: #888; margin-top: 10px; font-style: italic; }
-.hint-text-small { font-size: 11px; color: #7f8c8d; margin-top: 5px; }
-.section-subtitle { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #2c3e50; }
-.bank-inputs { display: flex; flex-direction: column; gap: 10px; }
-.bank-input { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
-.bank-input:focus { border-color: #00b14f; outline: none; }
-
-/* SPINNER & SUCCESS */
-.qr-processing { display: flex; flex-direction: column; align-items: center; justify-content: center; animation: fadeIn 0.5s; }
-.spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #00b14f; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
- @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-.qr-success { color: #00b14f; animation: fadeIn 0.5s; display: flex; flex-direction: column; align-items: center; }
-.check-icon-circle { width: 60px; height: 60px; background: #00b14f; color: white; font-size: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; margin-bottom: 15px; }
+.radio-circle { width: 18px; height: 18px; border: 2px solid #ccc; border-radius: 50%; }
+.pay-method.active .radio-circle { border-color: #00b14f; background: #00b14f; }
 .place-order-btn { width: 100%; background: #00b14f; color: white; border: none; padding: 18px; font-size: 18px; font-weight: bold; text-transform: uppercase; border-radius: 8px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(0, 177, 79, 0.3); margin-top: 20px; }
-.place-order-btn:hover { background: #009e39; transform: translateY(-2px); }
-.place-order-btn:disabled { background: #ccc; cursor: not-allowed; box-shadow: none; transform: none; }
-.order-summary-card h3 { margin-top: 0; font-size: 18px; margin-bottom: 15px; }
-.order-items-list { max-height: 300px; overflow-y: auto; margin-bottom: 15px; }
-.summary-item { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px; }
-.item-qty { font-weight: bold; color: #00b14f; width: 30px; }
-.item-name { flex: 1; padding-right: 10px; }
-.item-note { font-style: italic; color: #888; font-size: 12px; }
-.item-price { font-weight: 600; }
-.divider { height: 1px; background: #eee; margin: 15px 0; }
-.price-row { display: flex; justify-content: space-between; margin-bottom: 10px; color: #555; }
-.price-row.discount { color: #d63031; }
-.total-row { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; color: #333; margin-bottom: 20px; }
-.total-price { color: #00b14f; font-size: 22px; }
- @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-/* CSS TỐI ƯU MOBILE */
+.place-order-btn:hover { background: #009e39; }
+.place-order-btn:disabled { background: #ccc; cursor: not-allowed; }
+.map-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; display: flex; justify-content: center; align-items: center; }
+.map-modal-content { background: white; width: 900px; max-width: 95%; border-radius: 12px; overflow: hidden; }
+.map-header { padding: 15px 20px; background: #f0f2f5; display: flex; justify-content: space-between; align-items: center; }
+.confirm-map-btn { background: #00b14f; color: white; border: none; padding: 12px 30px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+
+/* Loading Animation */
+.loading-dot {
+  width: 8px;
+  height: 8px;
+  background: #e67e22;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0.5; }
+}
+
 @media (max-width: 768px) {
-    .checkout-page-wrapper {
-        padding: 10px 5px;
-    }
-    .checkout-content {
-        flex-direction: column; /* Chuyển thành 1 cột dọc */
-        gap: 15px;
-    }
-    .left-column, .right-column {
-        width: 100%;
-        flex: none;
-    }
-    .right-column {
-        position: static; /* Bỏ sticky để không bị che khuất */
-        order: 2; /* Đảm bảo tóm tắt nằm dưới các lựa chọn */
-    }
-    .checkout-header h1 {
-        font-size: 20px;
-    }
-    .section-card, .order-summary-card {
-        padding: 15px;
-        margin-bottom: 10px;
-    }
-    .input-wrapper {
-        flex-direction: column;
-    }
-    .button-group-vertical {
-        width: 100%;
-        flex-direction: row;
-        gap: 8px;
-        margin-top: 10px;
-    }
-    .detect-btn, .map-btn {
-        flex: 1;
-        width: auto;
-        justify-content: center;
-        padding: 0 8px;
-        font-size: 12px;
-        height: 40px;
-    }
-    .btn-text {
-        margin-left: 5px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .address-input {
-        width: 100%;
-        font-size: 14px;
-        padding: 12px;
-    }
-    .place-order-btn {
-        position: sticky; /* Nút đặt hàng sẽ dính ở mép dưới điện thoại để dễ bấm */
-        bottom: 10px;
-        z-index: 100;
-        padding: 15px;
-        margin-top: 10px;
-        box-shadow: 0 -4px 15px rgba(0,0,0,0.1);
-    }
-    .payment-methods {
-        flex-direction: column;
-    }
-    .pay-method {
-        width: 100%;
-        min-width: unset;
-    }
-    .qr-img {
-        width: 180px;
-        height: 180px;
-    }
-    .total-row {
-        font-size: 16px;
-    }
-    .total-price {
-        font-size: 18px;
-    }
+    .checkout-page-wrapper { padding: 10px 5px; }
+    .checkout-container-desktop { width: 100% !important; max-width: 100% !important; margin: 0; }
+    .checkout-content { flex-direction: column; gap: 15px; width: 100%; }
+    .left-column, .right-column { width: 100% !important; flex: none !important; }
+    .right-column { position: static; margin-top: 10px; }
+    .input-wrapper { flex-direction: column; gap: 12px; width: 100%; }
+    .address-input { width: 100% !important; min-height: 80px; }
+    .button-group-vertical { flex-direction: column; width: 100%; gap: 10px; }
+    .detect-btn, .map-btn { width: 100% !important; height: 45px; justify-content: center; font-size: 14px; }
+    .payment-methods { flex-direction: column; width: 100%; }
+    .pay-method { width: 100%; padding: 18px; }
+    .section-card { padding: 15px; width: 100%; box-sizing: border-box; }
+    .place-order-btn { width: 100%; padding: 20px; font-size: 16px; position: sticky; bottom: 10px; z-index: 100; }
 }
 </style>

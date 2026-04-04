@@ -15,6 +15,31 @@
 
       <div v-else class="space-y-6">
         <div v-for="order in orders" :key="order.id" class="bg-white p-6 rounded-xl shadow border border-gray-100 hover:shadow-lg transition-shadow cursor-pointer mb-6" @click="goToProduct(order)">
+          <div class="flex justify-between items-start mb-6">
+             <div class="flex gap-4">
+                <div class="w-20 h-20 rounded-lg overflow-hidden border border-gray-100 shrink-0">
+                   <img :src="getImageUrl(order.first_product_image)" alt="Order" class="w-full h-full object-cover">
+                </div>
+                <div>
+                   <h3 class="text-xl font-bold text-gray-800">Đơn #{{ order.order_code }}</h3>
+                   <p class="text-sm text-gray-500 mb-2">{{ order.shop_name }} • {{ formatDate(order.created_at) }}</p>
+                   
+                   <!-- Hiển thị danh sách món -->
+                   <div class="space-y-1">
+                      <p v-for="item in order.items" :key="item.id" class="text-sm text-gray-600">
+                         • <span class="font-bold text-green-600">{{ item.quantity }}x</span> {{ item.product_name }}
+                      </p>
+                   </div>
+                   <p class="font-bold text-red-500 mt-2">Tổng tiền: {{ formatPrice(order.total_price) }}</p>
+                </div>
+             </div>
+             <div class="text-right">
+                <span :class="getStatusClass(order.status)" class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+                   {{ getStatusText(order.status) }}
+                </span>
+             </div>
+          </div>
+
           <div v-if="order.status !== 'cancelled'">
             <div class="status-tracker mb-8">
               <div class="step" :class="{ active: getOrderStep(order.status) >= 1 }">
@@ -214,10 +239,14 @@ const fetchOrders = async () => {
   }
   
   try {
+    const token = localStorage.getItem('token');
     const response = await axios.get(`${API_BASE_URL}/api/orders`, {
       params: { 
         role: 'user', 
         userId: auth.user.id 
+      },
+      headers: {
+        Authorization: `Bearer ${token}`
       }
     });
     orders.value = response.data;

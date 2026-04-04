@@ -1,5 +1,14 @@
 <template>
   <div class="fixed bottom-4 right-4 z-50">
+    <!-- Status Bubble -->
+    <transition name="fade">
+      <div v-if="showStatus && !isOpen" class="absolute bottom-16 right-0 bg-white text-gray-800 px-4 py-2 rounded-2xl shadow-lg border border-gray-100 text-xs font-medium whitespace-nowrap mb-2 animate-bounce-slow flex items-center gap-2">
+        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+        Bạn cần giúp đỡ gì không?
+        <div class="absolute -bottom-2 right-6 w-4 h-4 bg-white border-b border-r border-gray-100 rotate-45"></div>
+      </div>
+    </transition>
+
     <!-- Toggle Button -->
     <button
       @click="toggleChat"
@@ -102,6 +111,10 @@ const newMessage = ref('');
 const isLoading = ref(false);
 const messagesContainer = ref(null);
 const authStore = useAuthStore();
+const showStatus = ref(false);
+
+// Status timer logic
+let statusInterval = null;
 
 // Voice Recognition State
 const isRecording = ref(false);
@@ -113,6 +126,7 @@ const aiImageUrl = ref(aiAvatar);
 
 const toggleChat = () => {
     isOpen.value = !isOpen.value;
+    if (isOpen.value) showStatus.value = false;
     if (!isOpen.value && isRecording.value) {
       stopVoiceRecognition();
     }
@@ -281,5 +295,56 @@ onMounted(() => {
     isOpen.value = true; // Tự động mở chat khi có thông báo
     addMessage(data.message);
   });
+
+  // Hiển thị bong bóng mỗi 5 giây (hiện 3s, ẩn 2s)
+  statusInterval = setInterval(() => {
+    if (!isOpen.value) {
+      showStatus.value = true;
+      setTimeout(() => {
+        showStatus.value = false;
+      }, 3000);
+    }
+  }, 5000);
+});
+
+onUnmounted(() => {
+  if (statusInterval) clearInterval(statusInterval);
+  if (silenceTimer) clearTimeout(silenceTimer);
 });
 </script>
+
+<style scoped>
+.fade-enter-active, .fade-leave-active {
+  transition: all 0.5s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.9);
+}
+
+@keyframes bounce-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 2s infinite ease-in-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse 3s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+</style>

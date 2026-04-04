@@ -139,11 +139,13 @@ import { ref, onMounted } from 'vue';
 import StandardHeader from '../components/StandardHeader.vue';
 import { useAuthStore } from '../stores/auth';
 import { useToastStore } from '../stores/toast';
+import { useConfirmStore } from '../stores/confirm';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 
 const auth = useAuthStore();
 const toast = useToastStore();
+const confirmStore = useConfirmStore();
 const shops = ref([]);
 const loading = ref(true);
 const selectedShop = ref(null);
@@ -190,7 +192,11 @@ const getImageUrl = (url) => {
 };
 
 const confirmDelete = async (shop) => {
-    if (confirm(`⚠️ CẢNH BÁO CỰC NGUY HIỂM!\n\nBạn có chắc chắn muốn XÓA VĨNH VIỄN Shop "${shop.name}" không?\n\nHành động này sẽ xóa sạch:\n- Thông tin Shop\n- Toàn bộ sản phẩm của Shop\n- Toàn bộ đơn hàng và tài khoản chủ quán.\n\nKHÔNG THỂ KHÔI PHỤC!`)) {
+    const message = `⚠️ CẢNH BÁO CỰC NGUY HIỂM!\n\nBạn có chắc chắn muốn XÓA VĨNH VIỄN Shop "${shop.name}" không?\n\nHành động này sẽ xóa sạch: Thông tin Shop, sản phẩm, đơn hàng và tài khoản chủ quán. KHÔNG THỂ KHÔI PHỤC!`;
+    
+    const confirmed = await confirmStore.ask(message, "Xác nhận xóa VĨNH VIỄN");
+    
+    if (confirmed) {
         try {
             await axios.delete(`${API_BASE_URL}/api/admin/shops/${shop.id}`, {
                 data: { userId: auth.user.id }

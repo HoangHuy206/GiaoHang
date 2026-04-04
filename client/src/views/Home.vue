@@ -1,15 +1,53 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 import StandardHeader from '../components/StandardHeader.vue'
 
 const isMenuOpen = ref(false)
 const activeTab = ref('nguoidung') // Tab chính: Người dùng / Tài xế
 const activeMenuTab = ref('nguoidung') // Tab trong menu: Grab / Người dùng / Đối tác
 
+const router = useRouter()
+const auth = useAuthStore()
+
+const handleFoodClick = () => {
+  if (auth.user) {
+    router.push('/food')
+  } else {
+    router.push('/login')
+  }
+}
+
 /* Khóa cuộn trang khi mở menu */
 watch(isMenuOpen, (open) => {
   document.body.style.overflow = open ? 'hidden' : 'auto'
 })
+
+// --- SCROLL REVEAL LOGIC ---
+let observer = null;
+
+onMounted(() => {
+  observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('active');
+        // Nếu muốn chỉ chạy 1 lần thì bỏ theo dõi
+        // observer.unobserve(entry.target);
+      }
+    });
+  }, {
+    threshold: 0.1 // Hiện ra khi thấy 10% phần tử
+  });
+
+  // Tìm tất cả các phần tử có class 'reveal'
+  const revealElements = document.querySelectorAll('.reveal');
+  revealElements.forEach(el => observer.observe(el));
+});
+
+onUnmounted(() => {
+  if (observer) observer.disconnect();
+});
 </script>
 
 <template>
@@ -17,6 +55,7 @@ watch(isMenuOpen, (open) => {
     <StandardHeader show-menu-button @toggle-menu="isMenuOpen = !isMenuOpen" />
 
     <div v-if="isMenuOpen" class="mega-menu-container">
+      <!-- ... (giữ nguyên menu) -->
       <div class="mega-menu-content">
         <ul class="menu-sidebar">
           <li @mouseenter="activeMenuTab = 'grab'" :class="{ active: activeMenuTab === 'grab'}">Về Giao Hàng</li>
@@ -83,12 +122,12 @@ watch(isMenuOpen, (open) => {
       <img src="@/assets/img/anh.logo/z7435869738899_000_e53e72bd89e38a070e1aa4f3a917f074.jpg" alt="Background">
     </div>
 
-    <div class="content-intro">
+    <div class="content-intro reveal">
       <h2>Từ những dịch vụ thiết yếu đến cơ hội gia tăng thu nhập, tất cả đều có trên 1 nền tảng</h2>
     </div>
 
     <div class="display-section">
-      <div class="tab-navigation">
+      <div class="tab-navigation reveal">
         <button :class="{ active: activeTab === 'nguoidung' }" @click="activeTab = 'nguoidung'">
           Người tiêu dùng
         </button>
@@ -98,22 +137,22 @@ watch(isMenuOpen, (open) => {
       </div>
 
       <div class="tab-content-wrapper">
-        <div v-if="activeTab === 'nguoidung'" class="content-layout fadeIn">
-          <div class="left-column">
+        <div v-if="activeTab === 'nguoidung'" class="content-layout">
+          <div class="left-column reveal">
             <h2>Giao hàng</h2>
           </div>
           <div class="right-column">
-            <div class="service-item">
+            <div class="service-item reveal" @click="handleFoodClick">
               <div class="icon-box"><img src="@/assets/img/anh.logo/icondoan.png" alt="Food"></div>
               <div class="text-box">
-                <router-link to="/login" class="no-underline">
+                <div class="no-underline">
                   <h3>Đồ ăn</h3>
                   <p>Giao món ngon tận tay.</p>
-                </router-link>
+                </div>
               </div>
             </div>
 
-            <div class="service-item">
+            <div class="service-item reveal">
               <div class="icon-box"><img src="@/assets/img/anh.logo/tuido.png" alt="Mart"></div>
               <router-link to="/:pathMatch" style="text-decoration: none;">
               <div class="text-box">
@@ -123,7 +162,7 @@ watch(isMenuOpen, (open) => {
              </router-link>
             </div>
 
-            <div class="service-item" >
+            <div class="service-item reveal" >
               <div class="icon-box"><img src="@/assets/img/anh.logo/traohang.png" alt="Express"></div>
               <div class="text-box">
                 <router-link to="/:pathMatch" style="text-decoration: none;">
@@ -135,10 +174,10 @@ watch(isMenuOpen, (open) => {
           </div>
         </div>
 
-        <div v-if="activeTab === 'taixe'" class="content-layout fadeIn">
-          <div class="left-column"><h2>Thu nhập</h2></div>
+        <div v-if="activeTab === 'taixe'" class="content-layout">
+          <div class="left-column reveal"><h2>Thu nhập</h2></div>
           <div class="right-column">
-            <div class="service-item">
+            <div class="service-item reveal">
               <div class="icon-box"><img src="@/assets/img/anh.logo/anhnen.png" alt="Driver"></div>
               <router-link to="/dangkytaixe" style="text-decoration: none;">
               <div class="text-box">
@@ -153,18 +192,18 @@ watch(isMenuOpen, (open) => {
     </div>
 
     <div class="info-section">
-      <h1 style="text-align: center;">Sự đóng góp của chúng tôi về thị trường Việt Nam</h1>
+      <h1 class="reveal" style="text-align: center;">Sự đóng góp của chúng tôi về thị trường Việt Nam</h1>
       <div class="card-container">
-        <div class="info-card">
+        <div class="info-card reveal">
           <h3>Thúc đẩy chuyển đổi số</h3>
           <p> Thúc đẩy du lịch địa phương thông qua hợp tác công – tư, điển hình là thỏa thuận hợp tác ba năm với Thành phố Huế. Nhiều sáng kiến và tính năng được triển khai nhằm thúc đẩy chuyển đổi số cho người dân, đối tác địa phương, đồng thời thu hút du khách</p>
         </div>
-        <div class="info-card">
+        <div class="info-card reveal">
           <h3>Tăng tốc chuyển đổi xanh</h3>
           <p style="max-width: 500px; margin: 0 auto;">Đẩy mạnh hợp tác công-tư tại thành phố lớn để giảm phát thải, hướng đến mục tiêu Net Zero. Các sáng kiến gồm kết nối các chuyến xe Grab với nhà ga metro, tạo điều kiện cho đối tác tài xế tiếp cận xe điện, đồng thời tạo điều kiện cho người dùng đóng góp vào các dự án tín chỉ carbon và dự án trồng rừng thông qua Chương trình Vững-Xanh.</p>
         </div>
       </div>
-      <div class="button-wrapper" style="text-align: center;">
+      <div class="button-wrapper reveal" style="text-align: center;">
         <button class="btn-more">Tìm hiểu thêm</button>
       </div>
     </div>
@@ -463,6 +502,22 @@ watch(isMenuOpen, (open) => {
 }
 .text-box p { font-size: 15px; color: #666; margin: 0; line-height: 1.5; }
 .no-underline { text-decoration: none; color: inherit; display: block; }
+
+/* --- SCROLL REVEAL CSS --- */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.8s ease-out;
+}
+
+.reveal.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Delay cho từng phần tử nếu cần (Tùy chọn) */
+.service-item:nth-child(2) { transition-delay: 0.1s; }
+.service-item:nth-child(3) { transition-delay: 0.2s; }
 
 .fadeIn { animation: fadeIn 0.5s ease-in-out; }
  @keyframes fadeIn {

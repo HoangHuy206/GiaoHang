@@ -9,488 +9,413 @@ require('dotenv').config();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const userStates = {}; 
 
+// Các link GIF trực tiếp (Giphy Clean URLs)
+const GIF_LINKS = {
+    welcome: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3o3VEtNR3B4VjU2cFA3dUUmZXA9djFfaW50ZXJuYWxfZ2lmX2J5X2lkJmN0PWc/3o7TKMGpxV5R6pP7uE/giphy.gif',
+    success: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM383VEtWVW43aU04Rk1FVTU0JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/3o7TKVUn7iM8FMEU24/giphy.gif',
+    money: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdnE1M3RndW1uZW12ZmtqbmZ4ZmtqbmZ4ZmtqbmZ4ZmtqbmZ4ZmtqYmImZXA9djFfaW50ZXJuYWxfZ2lmX2J5X2lkJmN0PWc/U6Y0IuJidW1i6T6Y6E/giphy.gif',
+    scooter: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdnE1M3RndW1uZW12ZmtqbmZ4ZmtqbmZ4ZmtqbmZ4ZmtqbmZ4ZmtqYmImZXA9djFfaW50ZXJuYWxfZ2lmX2J5X2lkJmN0PWc/U6Y0IuJidW1i6T6Y6E/giphy.gif'
+};
+
+// Hàm hỗ trợ tải GIF và gửi trực tiếp (Đảm bảo 100% hiển thị)
+async function sendAnimatedGif(chatId, url, caption = '') {
+    if (!bot) return;
+    try {
+        await bot.sendAnimation(chatId, url, { caption, parse_mode: 'HTML' });
+    } catch (e) {
+        try {
+            const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 5000 });
+            const buffer = Buffer.from(response.data, 'binary');
+            await bot.sendAnimation(chatId, buffer, { caption, parse_mode: 'HTML' }, { filename: 'animation.gif', contentType: 'image/gif' });
+        } catch (err2) {
+            console.error("⚠️ Không thể gửi GIF, chuyển sang tin nhắn văn bản.");
+            if (caption) await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+        }
+    }
+}
+
 let bot = null;
 if (token) {
     try {
-        bot = new TelegramBot(token, { polling: true });
+        // Chỉ chạy polling trên instance đầu tiên (nếu dùng PM2)
+        const isFirstInstance = process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0';
+        const disablePolling = process.env.DISABLE_TELEGRAM_POLLING === 'true';
+
+        bot = new TelegramBot(token, { polling: isFirstInstance && !disablePolling });
         
+        if (isFirstInstance && !disablePolling) {
+            console.log("🤖 Telegram Bot Polling started.");
+        } else {
+            console.log("🤖 Telegram Bot started in Send-only mode.");
+        }
         bot.on('polling_error', (error) => {
             if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
-                console.error("⚠️ CẢNH BÁO: Xung đột Bot Telegram (409 Conflict). Vui lòng kiểm tra xem bạn có đang chạy server ở terminal khác hoặc n8n không.");
-                // Dừng polling để tránh spam log
+                console.error("⚠️ CẢNH BÁO: Xung đột Bot Telegram (409 Conflict).");
                 bot.stopPolling();
-            } else {
-                console.error("❌ Lỗi Telegram Polling:", error.code, error.message);
             }
         });
 
         bot.on('message', async (msg) => {
-        const chatId = msg.chat.id;
-        const text = msg.text;
-        const chatIdStr = String(chatId);
+            const chatId = msg.chat.id;
+            const text = msg.text;
+            const chatIdStr = String(chatId);
 
-        console.log(`[Bot Message] From: ${chatIdStr}, Text: ${text}`);
+            console.log(`[Bot Message] From: ${chatIdStr}, Text: ${text}`);
 
-        const isAdmin = (chatIdStr === '5807941249');
-        let isShop = false;
-        try {
-            const [shopRows] = await pool.query('SELECT name FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
-            if (shopRows.length > 0) isShop = true;
-        } catch (e) {}
+            // 0. Lưu Chat ID vào bot_users (Đảm bảo luôn có trong danh sách Broadcast)
+            try {
+                await pool.query('REPLACE INTO bot_users (chat_id, last_seen) VALUES (?, NOW())', [chatIdStr]);
+            } catch (e) { console.error("Error saving bot user:", e.message); }
 
-        if (text === '/start' || text === '/help') {
-            let welcomeMsg = `👋 Chào bạn! Đây là Bot GiaoHangTanNoi <b>(V3)</b>\n\n` +
-                             `🆔 Chat ID của bạn là: <code>${chatIdStr}</code>\n\n` +
-                             `✅ <b>Lệnh khả dụng:</b>\n\n`;
+            // 1. Phản hồi các lệnh đơn giản
+            if (text === '/myid') {
+                return bot.sendMessage(chatId, `🆔 Chat ID của bạn là: <code>${chatIdStr}</code>`, { parse_mode: 'HTML' });
+            }
+
+            if (text === '/cancel') { 
+                delete userStates[chatId]; 
+                return bot.sendMessage(chatId, "❌ Đã hủy thao tác."); 
+            }
+
+            if (text === '/themid') {
+                return bot.sendMessage(chatId, "🆔 <b>TÍCH HỢP TELEGRAM</b>\n\nBạn đã có Shop trên hệ thống chưa?", {
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '✅ Đã có Shop', callback_data: 'has_shop' }],
+                            [{ text: '➕ Tạo Shop mới', callback_data: 'no_shop' }]
+                        ]
+                    }
+                });
+            }
+
+            const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '5807941249';
+            const isAdmin = (chatIdStr === ADMIN_CHAT_ID);
+            let isShop = false;
+            
+            const needsDb = ['/start', '/help', '/shop', '/xemsp', '/add_product', '/xoasp', '/admin_list', '/themid', '/trangthai'].some(cmd => text === cmd || (text && (text.startsWith('/admin_delete') || text.startsWith('/thongbao'))));
+            
+            if (needsDb || userStates[chatId]) {
+                try {
+                    const [shopRows] = await pool.query('SELECT name FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
+                    if (shopRows.length > 0) isShop = true;
+                } catch (e) {}
+            }
+
+            if (text === '/start' || text === '/help') {
+                let welcomeMsg = `👋 Chào bạn! Đây là Bot GiaoHangTanNoi <b>(V3)</b>\n\n` +
+                                 `🆔 Chat ID của bạn là: <code>${chatIdStr}</code>\n\n` +
+                                 `✅ <b>Lệnh khả dụng:</b>\n\n`;
+
+                if (isAdmin) {
+                    welcomeMsg += `📋 /admin_list - Danh sách tất cả Shop\n` +
+                                 `🗑️ /admin_delete [ID] - Xóa Shop\n` +
+                                 `📣 /thongbao [Nội dung] - Gửi thông báo toàn hệ thống\n`;
+                }
+
+                if (isShop || isAdmin) {
+                    welcomeMsg += `🏪 /shop - Xem thông tin Shop\n` +
+                                 `📦 /xemsp - Danh sách món ăn\n` +
+                                 `🍔 /add_product - Thêm món ăn mới\n` +
+                                 `🗑️ /xoasp - Xóa món ăn\n` +
+                                 `🚪 /trangthai - Đóng/Mở Shop nhanh\n` +
+                                 `❌ /cancel - Hủy thao tác\n`;
+                }
+
+                welcomeMsg += `🆔 /myid - Xem Chat ID của bạn\n` +
+                             `🆔 /themid - Tích hợp ID & Tạo Shop mới\n\n` +
+                             `<i>Sử dụng /themid để liên kết Telegram với Shop của bạn!</i>`;
+
+                sendAnimatedGif(chatId, 'https://i.giphy.com/3o7TKMGpxV5R6pP7uE.gif', welcomeMsg);
+                return;
+            }
 
             if (isAdmin) {
-                welcomeMsg += `📋 /admin_list - Danh sách tất cả Shop\n` +
-                             `🗑️ /admin_delete [ID] - Xóa Shop\n`;
+                if (text === '/admin_list') {
+                    try {
+                        const [rows] = await pool.query('SELECT s.id, s.name, u.full_name as owner FROM shops s LEFT JOIN users u ON s.user_id = u.id');
+                        if (rows.length === 0) return bot.sendMessage(chatId, "Hệ thống chưa có Shop nào.");
+                        let m = "📋 <b>DANH SÁCH SHOP:</b>\n\n";
+                        rows.forEach(s => { m += `ID: <code>${s.id}</code> - <b>${s.name}</b> (${s.owner || 'N/A'})\n`; });
+                        bot.sendMessage(chatId, m, { parse_mode: 'HTML' });
+                    } catch (e) { bot.sendMessage(chatId, "Lỗi tải danh sách."); }
+                    return;
+                }
+
+                if (text && text.startsWith('/thongbao')) {
+                    const broadcastMsg = text.replace('/thongbao', '').trim();
+                    if (!broadcastMsg) return bot.sendMessage(chatId, "⚠️ Nhập: <code>/thongbao [Nội dung]</code>", { parse_mode: 'HTML' });
+                    
+                    try {
+                        const [users] = await pool.query('SELECT chat_id FROM bot_users');
+                        bot.sendMessage(chatId, `⏳ Đang gửi thông báo cho <b>${users.length}</b> người dùng...`, { parse_mode: 'HTML' });
+                        
+                        let count = 0;
+                        for (const u of users) {
+                            try {
+                                await bot.sendMessage(u.chat_id, `📣 <b>THÔNG BÁO TỪ HỆ THỐNG:</b>\n\n${broadcastMsg}`, { parse_mode: 'HTML' });
+                                count++;
+                            } catch (err) { console.error(`Lỗi gửi thông báo cho ${u.chat_id}:`, err.message); }
+                        }
+                        bot.sendMessage(chatId, `✅ <b>HOÀN TẤT:</b> Đã gửi thành công cho <b>${count}/${users.length}</b> người dùng.`, { parse_mode: 'HTML' });
+                    } catch (e) { bot.sendMessage(chatId, "❌ Lỗi thực hiện gửi thông báo."); }
+                    return;
+                }
+
+                if (text && text.startsWith('/admin_delete')) {
+                    const shopId = text.split(' ')[1];
+                    if (!shopId) return bot.sendMessage(chatId, "⚠️ Nhập: /admin_delete [ID]");
+                    bot.sendMessage(chatId, `⚠️ <b>XÁC NHẬN:</b> Xóa Shop ID <code>${shopId}</code>?`, {
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                            inline_keyboard: [[{ text: '🔥 XÓA NGAY', callback_data: `confirm_admin_del_${shopId}` }, { text: '❌ HỦY', callback_data: 'cancel_admin_del' }]]
+                        }
+                    });
+                    return;
+                }
             }
 
             if (isShop || isAdmin) {
-                welcomeMsg += `🏪 /shop - Xem thông tin Shop\n` +
-                             `📦 /xemsp - Danh sách món ăn\n` +
-                             `🍔 /add_product - Thêm món ăn mới\n` +
-                             `🗑️ /xoasp - Xóa món ăn\n` +
-                             `❌ /cancel - Hủy thao tác\n`;
+                if (text === '/trangthai') {
+                    try {
+                        const [rows] = await pool.query('SELECT id, name, is_active FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
+                        if (rows.length === 0) return bot.sendMessage(chatId, "⚠️ Shop của bạn chưa được liên kết.");
+                        
+                        const shop = rows[0];
+                        const newStatus = shop.is_active ? 0 : 1;
+                        const statusText = newStatus ? "🚪 <b>MỞ CỬA</b>" : "🔒 <b>ĐÓNG CỬA</b>";
+
+                        await pool.query('UPDATE shops SET is_active = ? WHERE id = ?', [newStatus, shop.id]);
+                        bot.sendMessage(chatId, `✅ <b>THÀNH CÔNG:</b> Shop <b>${shop.name}</b> đã được chuyển sang trạng thái: ${statusText}\n\n<i>(Quán sẽ ${newStatus ? 'hiện lên' : 'ẩn đi'} trên ứng dụng của khách hàng)</i>`, { parse_mode: 'HTML' });
+                    } catch (e) { bot.sendMessage(chatId, "❌ Lỗi thay đổi trạng thái Shop."); }
+                    return;
+                }
+
+                if (text === '/shop') {
+                    const [rows] = await pool.query('SELECT * FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
+                    if (rows.length > 0) {
+                        const s = rows[0];
+                        const status = s.is_active ? "🟢 Đang mở" : "🔴 Đang đóng";
+                        bot.sendMessage(chatId, `🏪 <b>${s.name}</b>\n📍 ${s.address}\n🏦 ${s.bank_code} - ${s.bank_account}\n🛒 Trạng thái: <b>${status}</b>`, { parse_mode: 'HTML' });
+                    }
+                    return;
+                }
+
+                if (text === '/add_product') {
+                    const [rows] = await pool.query('SELECT id FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
+                    if (rows.length === 0) return bot.sendMessage(chatId, "⚠️ Cần liên kết Shop.");
+                    userStates[chatId] = { step: 'AWAITING_NAME', shopId: rows[0].id, data: {} };
+                    bot.sendMessage(chatId, "🍔 Nhập <b>Tên món ăn:</b>", { parse_mode: 'HTML' });
+                    return;
+                }
             }
 
-            welcomeMsg += `🆔 /myid - Xem Chat ID của bạn\n` +
-                         `🆔 /themid - Tích hợp ID & Tạo Shop mới\n\n` +
-                         `<i>Sử dụng /themid để liên kết Telegram với Shop của bạn!</i>`;
+            const state = userStates[chatId];
+            if (state) {
+                const downloadPhoto = async (msg) => {
+                    if (!msg.photo) return 'anhdaidienmacdinh.jpg';
+                    try {
+                        const fileId = msg.photo[msg.photo.length - 1].file_id;
+                        const fileLink = await bot.getFileLink(fileId);
+                        const fileName = `${Date.now()}-${Math.round(Math.random() * 1E9)}.jpg`;
+                        const uploadDir = path.join(__dirname, '../uploads');
+                        const filePath = path.join(uploadDir, fileName);
+                        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+                        const response = await axios({ url: fileLink, method: 'GET', responseType: 'stream' });
+                        return new Promise((resolve, reject) => {
+                            const writer = fs.createWriteStream(filePath);
+                            response.data.pipe(writer);
+                            writer.on('finish', () => resolve(fileName));
+                            writer.on('error', () => resolve('anhdaidienmacdinh.jpg'));
+                        });
+                    } catch (e) { return 'anhdaidienmacdinh.jpg'; }
+                };
 
-            bot.sendMessage(chatId, welcomeMsg, { parse_mode: 'HTML' });
-            return;
-        }
+                if (state.step === 'AWAITING_NAME') {
+                    state.data.name = text; state.step = 'AWAITING_PRICE';
+                    bot.sendMessage(chatId, "💰 Nhập <b>Giá tiền:</b>", { parse_mode: 'HTML' });
+                }
+                else if (state.step === 'AWAITING_PRICE') {
+                    const p = parseFloat(text.replace(/[^0-9]/g, ''));
+                    if (isNaN(p)) return bot.sendMessage(chatId, "❌ Nhập số hợp lệ:");
+                    state.data.price = p; state.step = 'AWAITING_IMAGE';
+                    bot.sendMessage(chatId, "🖼️ Gửi <b>Ảnh</b> hoặc gõ 'skip':", { parse_mode: 'HTML' });
+                }
+                else if (state.step === 'AWAITING_IMAGE') {
+                    const img = await downloadPhoto(msg);
+                    await pool.query('INSERT INTO products (shop_id, name, price, image_url) VALUES (?,?,?,?)', [state.shopId, state.data.name, state.data.price, `/uploads/${img}`]);
+                    const priceFormatted = new Intl.NumberFormat('vi-VN').format(state.data.price) + 'đ';
+                    const successMsg = `✅ <b>Đã thêm sản phẩm thành công!</b>\n🍔 Tên: ${state.data.name}\n💰 Giá: ${priceFormatted}`;
+                    const imgPath = path.join(__dirname, '../uploads', img);
+                    if (fs.existsSync(imgPath)) await bot.sendPhoto(chatId, fs.createReadStream(imgPath), { caption: successMsg, parse_mode: 'HTML' });
+                    else await bot.sendMessage(chatId, successMsg, { parse_mode: 'HTML' });
+                    sendAnimatedGif(chatId, GIF_LINKS.success);
+                    delete userStates[chatId];
+                }
+                else if (state.step === 'AWAITING_NEW_SHOP_IMAGE') {
+                    state.data.image = await downloadPhoto(msg); state.step = 'AWAITING_NEW_SHOP_NAME';
+                    bot.sendMessage(chatId, "📛 Nhập <b>Tên quán:</b>", { parse_mode: 'HTML' });
+                }
+                else if (state.step === 'AWAITING_NEW_SHOP_NAME') {
+                    state.data.name = text; state.step = 'AWAITING_NEW_SHOP_ADDRESS';
+                    bot.sendMessage(chatId, "📍 Nhập <b>Địa chỉ:</b>", { parse_mode: 'HTML' });
+                }
+                else if (state.step === 'AWAITING_NEW_SHOP_ADDRESS') {
+                    state.data.address = text; state.step = 'AWAITING_NEW_SHOP_USERNAME';
+                    bot.sendMessage(chatId, "👤 Nhập <b>Tên đăng nhập:</b>", { parse_mode: 'HTML' });
+                }
+                else if (state.step === 'AWAITING_NEW_SHOP_USERNAME') {
+                    state.data.username = text.toLowerCase().replace(/\s/g, ''); state.step = 'AWAITING_NEW_SHOP_PASSWORD';
+                    bot.sendMessage(chatId, "🔑 Nhập <b>Mật khẩu:</b>", { parse_mode: 'HTML' });
+                }
+                else if (state.step === 'AWAITING_NEW_SHOP_PASSWORD') {
+                    const bcrypt = require('bcrypt');
+                    state.data.password = await bcrypt.hash(text, 10);
+                    state.data.rawPassword = text; // Để gửi lại cho người dùng
+                    state.step = 'AWAITING_NEW_SHOP_BANK_CODE';
+                    bot.sendMessage(chatId, "🏦 Nhập <b>Mã ngân hàng:</b>", { parse_mode: 'HTML' });
+                }
+                else if (state.step === 'AWAITING_NEW_SHOP_BANK_CODE') {
+                    state.data.bank_code = text.toUpperCase(); state.step = 'AWAITING_NEW_SHOP_BANK_ACCOUNT';
+                    bot.sendMessage(chatId, "💳 Nhập <b>Số tài khoản:</b>", { parse_mode: 'HTML' });
+                }
+                else if (state.step === 'AWAITING_NEW_SHOP_BANK_ACCOUNT') {
+                    state.data.bank_account = text;
+                    const conn = await pool.getConnection();
+                    try {
+                        await conn.beginTransaction();
+                        const [u] = await conn.query('INSERT INTO users (username, password, role, full_name) VALUES (?, ?, "shop", ?)', [state.data.username, state.data.password, state.data.name]);
+                        await conn.query('INSERT INTO shops (name, user_id, image_url, address, bank_code, bank_account, telegram_chat_id) VALUES (?,?,?,?,?,?,?)', 
+                            [state.data.name, u.insertId, `/uploads/${state.data.image}`, state.data.address, state.data.bank_code, state.data.bank_account, chatIdStr]);
+                        await conn.commit();
+                        const successMsg = `🎉 <b>Tạo Shop thành công!</b>\n🏪 Tên: ${state.data.name}\n👤 TK: <code>${state.data.username}</code>\n🔑 MK: <code>${state.data.rawPassword}</code>`;
+                        const imgPath = path.join(__dirname, '../uploads', state.data.image);
+                        if (fs.existsSync(imgPath)) await bot.sendPhoto(chatId, fs.createReadStream(imgPath), { caption: successMsg, parse_mode: 'HTML' });
+                        else await bot.sendMessage(chatId, successMsg, { parse_mode: 'HTML' });
+                    } catch (e) { await conn.rollback(); bot.sendMessage(chatId, "❌ Lỗi tạo Shop."); }
+                    finally { conn.release(); delete userStates[chatId]; }
+                }
+                else if (state.step === 'AWAITING_BANK_CODE') {
+                    state.data.bank_code = text.toUpperCase(); state.step = 'AWAITING_BANK_ACCOUNT';
+                    bot.sendMessage(chatId, "💳 Nhập <b>Số tài khoản:</b>");
+                }
+                else if (state.step === 'AWAITING_BANK_ACCOUNT') {
+                    await pool.query('UPDATE shops SET telegram_chat_id = ?, bank_code = ?, bank_account = ? WHERE id = ?', [chatIdStr, state.data.bank_code, text, state.shopId]);
+                    bot.sendMessage(chatId, "✅ Tích hợp ID thành công!");
+                    delete userStates[chatId];
+                }
+            }
+        });
 
-        if (isAdmin) {
-            if (text === '/admin_list') {
+        bot.on('callback_query', async (q) => {
+            const { data, message } = q;
+            const chatId = message.chat.id;
+            const chatIdStr = String(chatId);
+            const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '5807941249';
+
+            if (data.startsWith('confirm_admin_del_')) {
+                const shopId = data.split('_')[3];
+                if (chatIdStr !== ADMIN_CHAT_ID) return;
+                const conn = await pool.getConnection();
                 try {
-                    const [rows] = await pool.query('SELECT s.id, s.name, u.full_name as owner FROM shops s LEFT JOIN users u ON s.user_id = u.id');
-                    if (rows.length === 0) return bot.sendMessage(chatId, "Hệ thống chưa có Shop nào.");
-                    let m = "📋 <b>DANH SÁCH SHOP:</b>\n\n";
-                    rows.forEach(s => { m += `ID: <code>${s.id}</code> - <b>${s.name}</b> (${s.owner || 'N/A'})\n`; });
-                    bot.sendMessage(chatId, m, { parse_mode: 'HTML' });
-                } catch (e) { bot.sendMessage(chatId, "Lỗi tải danh sách."); }
-                return;
+                    await conn.beginTransaction();
+                    const [shopInfo] = await conn.query('SELECT user_id FROM shops WHERE id = ?', [shopId]);
+                    const userId = shopInfo.length > 0 ? shopInfo[0].user_id : null;
+                    await conn.query('DELETE FROM reviews WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ?)', [shopId]);
+                    await conn.query('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ?)', [shopId]);
+                    await conn.query('DELETE FROM orders WHERE shop_id = ?', [shopId]);
+                    await conn.query('DELETE FROM favorites WHERE shop_id = ?', [shopId]);
+                    await conn.query('DELETE FROM products WHERE shop_id = ?', [shopId]);
+                    await conn.query('DELETE FROM shops WHERE id = ?', [shopId]);
+                    if (userId) await conn.query('DELETE FROM users WHERE id = ?', [userId]);
+                    await conn.commit();
+                    bot.editMessageText(`✅ Đã xóa vĩnh viễn Shop ID ${shopId}.`, { chat_id: chatId, message_id: message.message_id });
+                } catch (e) { await conn.rollback(); bot.sendMessage(chatId, `❌ Lỗi xóa Shop: ${e.message}`); }
+                finally { conn.release(); }
             }
-
-            if (text && text.startsWith('/admin_delete')) {
-                const shopId = text.split(' ')[1];
-                if (!shopId) return bot.sendMessage(chatId, "⚠️ Nhập: /admin_delete [ID]");
-                bot.sendMessage(chatId, `⚠️ <b>XÁC NHẬN:</b> Xóa Shop ID <code>${shopId}</code>?`, {
-                    parse_mode: 'HTML',
-                    reply_markup: {
-                        inline_keyboard: [[{ text: '🔥 XÓA NGAY', callback_data: `confirm_admin_del_${shopId}` }, { text: '❌ HỦY', callback_data: 'cancel_admin_del' }]]
+            else if (data === 'cancel_admin_del') bot.editMessageText("❌ Đã hủy.", { chat_id: chatId, message_id: message.message_id });
+            else if (data === 'has_shop') {
+                const [rows] = await pool.query('SELECT id, name FROM shops WHERE telegram_chat_id IS NULL OR telegram_chat_id = ""');
+                const kb = rows.map(s => [{ text: s.name, callback_data: `select_shop_${s.id}` }]);
+                bot.sendMessage(chatId, "🏪 Chọn Shop của bạn:", { reply_markup: { inline_keyboard: kb } });
+            }
+            else if (data === 'no_shop') {
+                userStates[chatId] = { step: 'AWAITING_NEW_SHOP_IMAGE', data: {} };
+                bot.sendMessage(chatId, "🖼️ Gửi <b>Ảnh đại diện Shop:</b>", { parse_mode: 'HTML' });
+            }
+            else if (data.startsWith('select_shop_')) {
+                userStates[chatId] = { step: 'AWAITING_BANK_CODE', shopId: data.split('_')[2], data: {} };
+                bot.sendMessage(chatId, "🏦 Nhập <b>Mã ngân hàng:</b>", { parse_mode: 'HTML' });
+            }
+            else if (data.startsWith('refunded_')) {
+                const orderId = data.split('_')[1];
+                await pool.query("UPDATE orders SET payment_status = 'refunded', status = 'cancelled' WHERE id = ?", [orderId]);
+                bot.deleteMessage(chatId, message.message_id).catch(() => {});
+                bot.sendMessage(chatId, `✅ <b>XÁC NHẬN:</b> Hoàn tiền đơn hàng <b>DH${orderId}</b> thành công!`, { parse_mode: 'HTML' });
+            }
+            else if (data.startsWith('contact_cust_')) {
+                const orderId = data.split('_')[2];
+                try {
+                    const [rows] = await pool.query(`SELECT u.email, u.full_name, u.phone FROM orders o JOIN users u ON o.user_id = u.id WHERE o.id = ?`, [orderId]);
+                    if (rows.length > 0) {
+                        const c = rows[0];
+                        bot.sendMessage(chatId, `📧 <b>THÔNG TIN LIÊN HỆ (DH${orderId})</b>\n\n👤 Họ tên: <b>${c.full_name}</b>\n✉️ Email: <code>${c.email}</code>\n📞 SĐT: <code>${c.phone || 'N/A'}</code>`, { parse_mode: 'HTML' });
                     }
-                });
-                return;
+                } catch (err) {}
             }
-        }
-
-        if (text === '/cancel') { delete userStates[chatId]; return bot.sendMessage(chatId, "❌ Đã hủy thao tác."); }
-
-        if (text === '/xemsp') {
-            try {
-                // 1. Tìm shop theo telegram_chat_id
-                const [shopRows] = await pool.query('SELECT id, name FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
-                if (shopRows.length === 0) {
-                    return bot.sendMessage(chatId, "⚠️ <b>LỖI:</b> Bạn chưa liên kết Shop với Telegram này.\nSử dụng lệnh /themid để bắt đầu!", { parse_mode: 'HTML' });
-                }
-
-                const shopId = shopRows[0].id;
-                const shopName = shopRows[0].name;
-
-                // 2. Lấy danh sách sản phẩm
-                const [productRows] = await pool.query('SELECT name, price, image_url FROM products WHERE shop_id = ?', [shopId]);
-                
-                if (productRows.length === 0) {
-                    return bot.sendMessage(chatId, `🏪 <b>${shopName}</b> hiện chưa có món ăn nào trong thực đơn.`, { parse_mode: 'HTML' });
-                }
-
-                bot.sendMessage(chatId, `🍱 <b>THỰC ĐƠN CỦA ${shopName.toUpperCase()}:</b>`, { parse_mode: 'HTML' });
-
-                for (const p of productRows) {
-                    const priceFormatted = new Intl.NumberFormat('vi-VN').format(p.price) + 'đ';
-                    const caption = `<b>${p.name}</b>\n💰 Giá: <code>${priceFormatted}</code>`;
-                    
-                    if (p.image_url) {
-                        const imgPath = path.join(__dirname, '..', p.image_url.replace('/uploads/', 'uploads/'));
-                        if (fs.existsSync(imgPath)) {
-                            await bot.sendPhoto(chatId, fs.createReadStream(imgPath), { caption, parse_mode: 'HTML' });
-                        } else {
-                            await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
-                        }
-                    } else {
-                        await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+            else if (data.startsWith('del_prod_')) {
+                const prodId = data.split('_')[2];
+                try {
+                    const [pRows] = await pool.query('SELECT p.name, s.telegram_chat_id FROM products p JOIN shops s ON p.shop_id = s.id WHERE p.id = ?', [prodId]);
+                    if (pRows.length > 0 && (pRows[0].telegram_chat_id === chatIdStr || isAdmin)) {
+                        await pool.query('DELETE FROM products WHERE id = ?', [prodId]);
+                        bot.editMessageText(`✅ Đã xóa món: <b>${pRows[0].name}</b>`, { chat_id: chatId, message_id: message.message_id, parse_mode: 'HTML' });
                     }
-                }
-
-                bot.sendMessage(chatId, `\n<i>Sử dụng /add_product để thêm món mới!</i>`, { parse_mode: 'HTML' });
-            } catch (err) {
-                console.error("Lỗi xem sản phẩm:", err);
-                bot.sendMessage(chatId, "❌ Có lỗi xảy ra khi tải danh sách món ăn.");
+                } catch (e) {}
             }
-            return;
+            bot.answerCallbackQuery(q.id);
+        });
+    } catch (err) { console.error("❌ Lỗi Telegram Bot Initialization:", err); }
+}
+
+async function sendRefundNotification(orderId) {
+    try {
+        const [rows] = await pool.query(`SELECT o.id, o.shop_id, o.total_price, u.full_name as customer_name, o.customer_bank_code, o.customer_bank_account, s.name as shopName, s.telegram_chat_id as shopChatId FROM orders o JOIN users u ON o.user_id = u.id JOIN shops s ON o.shop_id = s.id WHERE o.id = ? AND o.payment_status = 'paid'`, [orderId]);
+        if (rows.length === 0) return;
+        const o = rows[0];
+        const qrUrl = `https://img.vietqr.io/image/${o.customer_bank_code || 'MB'}-${o.customer_bank_account}-compact2.jpg?amount=${Math.round(o.total_price)}&addInfo=HOAN TIEN DH${o.id}`;
+        const msg = `⚠️ <b>YÊU CẦU HOÀN TIỀN DH${o.id}</b>\n\n💰 Tiền: <b>${new Intl.NumberFormat('vi-VN').format(o.total_price)}đ</b>\n👤 Khách: <b>${o.customer_name}</b>\n🏦 Ngân hàng: <b>${o.customer_bank_code}</b>\n💳 STK: <code>${o.customer_bank_account}</code>`;
+        const target = o.shopChatId || process.env.TELEGRAM_CHAT_ID;
+        if (target && bot) {
+            await bot.sendPhoto(target, qrUrl, { caption: msg, parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '✅ Đã hoàn tiền', callback_data: `refunded_${o.id}` }], [{ text: '📞 Liên hệ', callback_data: `contact_cust_${o.id}` }]] } });
+            await pool.query('UPDATE orders SET refund_notified = 1 WHERE id = ?', [o.id]);
         }
+    } catch (e) {}
+}
 
-        if (text === '/xoasp') {
-            try {
-                const [shopRows] = await pool.query('SELECT id, name FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
-                if (shopRows.length === 0) return bot.sendMessage(chatId, "⚠️ Cần liên kết Shop.");
-
-                const shopId = shopRows[0].id;
-                const [productRows] = await pool.query('SELECT id, name FROM products WHERE shop_id = ?', [shopId]);
-
-                if (productRows.length === 0) return bot.sendMessage(chatId, "🍱 Quán hiện chưa có món nào.");
-
-                let m = "🗑️ <b>CHỌN MÓN MUỐN XÓA:</b>\n\n";
-                const kb = productRows.map(p => ([{ text: `❌ ${p.name}`, callback_data: `del_prod_${p.id}` }]));
-
-                bot.sendMessage(chatId, m, { 
-                    parse_mode: 'HTML',
-                    reply_markup: { inline_keyboard: kb }
-                });
-            } catch (e) { bot.sendMessage(chatId, "❌ Lỗi tải danh sách xóa."); }
-            return;
-        }
-
-        if (text === '/themid') {
-            // Kiểm tra xem user này đã có shop chưa (trừ Admin)
-            if (!isAdmin && isShop) {
-                return bot.sendMessage(chatId, "⚠️ <b>THÔNG BÁO:</b> Tài khoản của bạn đã được liên kết với một Shop.\n\nBạn không thể sử dụng lệnh /themid nữa. Hãy sử dụng /shop hoặc /xemsp để quản lý!", { parse_mode: 'HTML' });
+async function sendDailyReport() {
+    try {
+        const [shops] = await pool.query('SELECT id, name, telegram_chat_id FROM shops WHERE telegram_chat_id IS NOT NULL AND telegram_chat_id != ""');
+        for (const shop of shops) {
+            const [stats] = await pool.query(`SELECT COUNT(*) as totalOrders, SUM(total_price) as totalRevenue FROM orders WHERE shop_id = ? AND status = 'delivered' AND DATE(created_at) = CURDATE()`, [shop.id]);
+            if (stats[0].totalOrders === 0) {
+                await bot.sendMessage(shop.telegram_chat_id, `📊 <b>BÁO CÁO NGÀY ${new Date().toLocaleDateString('vi-VN')}</b>\n\n🏪 Shop: <b>${shop.name}</b>\n\nHôm nay chưa có đơn hoàn thành.`, { parse_mode: 'HTML' });
+                continue;
             }
-
-            userStates[chatId] = { step: 'AWAITING_EXISTING_SHOP_CONFIRMATION' };
-            bot.sendMessage(chatId, "👋 Bạn đã có Shop trên <b>giaohangtannoi.id.vn</b> chưa?", {
-                parse_mode: 'HTML',
-                reply_markup: {
-                    inline_keyboard: [[{ text: '✅ Đã có', callback_data: 'has_shop' }, { text: '🆕 Chưa có', callback_data: 'no_shop' }]]
-                }
-            });
-            return;
+            const reportMsg = `📊 <b>BÁO CÁO NGÀY ${new Date().toLocaleDateString('vi-VN')}</b>\n\n🏪 Shop: <b>${shop.name}</b>\n✅ Tổng đơn: <b>${stats[0].totalOrders}</b>\n💰 Doanh thu: <b>${new Intl.NumberFormat('vi-VN').format(stats[0].totalRevenue)}đ</b>`;
+            sendAnimatedGif(shop.telegram_chat_id, GIF_LINKS.money, reportMsg);
         }
-
-        if (isShop || isAdmin) {
-            if (text === '/shop') {
-                const [rows] = await pool.query('SELECT * FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
-                if (rows.length > 0) {
-                    const s = rows[0];
-                    bot.sendMessage(chatId, `🏪 <b>${s.name}</b>\n📍 ${s.address}\n🏦 ${s.bank_code} - ${s.bank_account}`, { parse_mode: 'HTML' });
-                }
-                return;
-            }
-
-            if (text === '/add_product') {
-                const [rows] = await pool.query('SELECT id FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
-                if (rows.length === 0) return bot.sendMessage(chatId, "⚠️ Cần liên kết Shop.");
-                userStates[chatId] = { step: 'AWAITING_NAME', shopId: rows[0].id, data: {} };
-                bot.sendMessage(chatId, "🍔 Nhập <b>Tên món ăn:</b>", { parse_mode: 'HTML' });
-                return;
-            }
-        }
-
-        const state = userStates[chatId];
-        if (!state) return;
-
-        const downloadPhoto = async (msg) => {
-            // Nếu người dùng gõ 'skip' hoặc không gửi ảnh
-            if (!msg.photo) return 'anhdaidienmacdinh.jpg';
-            
-            try {
-                const fileId = msg.photo[msg.photo.length - 1].file_id;
-                const fileLink = await bot.getFileLink(fileId);
-                const fileName = `${Date.now()}-${Math.round(Math.random() * 1E9)}.jpg`;
-                const uploadDir = path.join(__dirname, '../uploads');
-                const filePath = path.join(uploadDir, fileName);
-
-                // Đảm bảo thư mục uploads tồn tại
-                if (!fs.existsSync(uploadDir)) {
-                    fs.mkdirSync(uploadDir, { recursive: true });
-                }
-
-                const response = await axios({
-                    url: fileLink,
-                    method: 'GET',
-                    responseType: 'stream'
-                });
-
-                return new Promise((resolve, reject) => {
-                    const writer = fs.createWriteStream(filePath);
-                    response.data.pipe(writer);
-                    writer.on('finish', () => {
-                        console.log(`✅ Đã lưu ảnh từ Telegram: ${fileName}`);
-                        resolve(fileName);
-                    });
-                    writer.on('error', (err) => {
-                        console.error("❌ Lỗi ghi file ảnh:", err);
-                        resolve('anhdaidienmacdinh.jpg');
-                    });
-                });
-            } catch (error) {
-                console.error("❌ Lỗi tải ảnh từ Telegram:", error);
-                return 'anhdaidienmacdinh.jpg';
-            }
-        };
-
-        if (state.step === 'AWAITING_NAME') {
-            state.data.name = text; state.step = 'AWAITING_PRICE';
-            bot.sendMessage(chatId, "💰 Nhập <b>Giá tiền:</b>", { parse_mode: 'HTML' });
-        }
-        else if (state.step === 'AWAITING_PRICE') {
-            const p = parseFloat(text.replace(/[^0-9]/g, ''));
-            if (isNaN(p)) return bot.sendMessage(chatId, "❌ Nhập số hợp lệ:");
-            state.data.price = p; state.step = 'AWAITING_IMAGE';
-            bot.sendMessage(chatId, "🖼️ Gửi <b>Ảnh</b> hoặc gõ 'skip':", { parse_mode: 'HTML' });
-        }
-        else if (state.step === 'AWAITING_IMAGE') {
-            const img = await downloadPhoto(msg);
-            await pool.query('INSERT INTO products (shop_id, name, price, image_url) VALUES (?,?,?,?)', [state.shopId, state.data.name, state.data.price, `/uploads/${img}`]);
-            
-            const priceFormatted = new Intl.NumberFormat('vi-VN').format(state.data.price) + 'đ';
-            const successMsg = `✅ <b>Đã thêm sản phẩm thành công!</b>\n🍔 Tên: ${state.data.name}\n💰 Giá: ${priceFormatted}`;
-            
-            const imgPath = path.join(__dirname, '../uploads', img);
-            if (fs.existsSync(imgPath)) {
-                await bot.sendPhoto(chatId, fs.createReadStream(imgPath), { caption: successMsg, parse_mode: 'HTML' });
-            } else {
-                await bot.sendMessage(chatId, successMsg, { parse_mode: 'HTML' });
-            }
-            delete userStates[chatId];
-        }
-        else if (state.step === 'AWAITING_NEW_SHOP_IMAGE') {
-            state.data.image = await downloadPhoto(msg); state.step = 'AWAITING_NEW_SHOP_NAME';
-            bot.sendMessage(chatId, "📛 Nhập <b>Tên quán:</b>", { parse_mode: 'HTML' });
-        }
-        else if (state.step === 'AWAITING_NEW_SHOP_NAME') {
-            state.data.name = text; state.step = 'AWAITING_NEW_SHOP_ADDRESS';
-            bot.sendMessage(chatId, "📍 Nhập <b>Địa chỉ:</b>", { parse_mode: 'HTML' });
-        }
-        else if (state.step === 'AWAITING_NEW_SHOP_ADDRESS') {
-            state.data.address = text; state.step = 'AWAITING_NEW_SHOP_USERNAME';
-            bot.sendMessage(chatId, "👤 Nhập <b>Tên đăng nhập:</b>", { parse_mode: 'HTML' });
-        }
-        else if (state.step === 'AWAITING_NEW_SHOP_USERNAME') {
-            state.data.username = text.toLowerCase().replace(/\s/g, ''); state.step = 'AWAITING_NEW_SHOP_PASSWORD';
-            bot.sendMessage(chatId, "🔑 Nhập <b>Mật khẩu:</b>", { parse_mode: 'HTML' });
-        }
-        else if (state.step === 'AWAITING_NEW_SHOP_PASSWORD') {
-            state.data.password = text; state.step = 'AWAITING_NEW_SHOP_BANK_CODE';
-            bot.sendMessage(chatId, "🏦 Nhập <b>Mã ngân hàng:</b>", { parse_mode: 'HTML' });
-        }
-        else if (state.step === 'AWAITING_NEW_SHOP_BANK_CODE') {
-            state.data.bank_code = text.toUpperCase(); state.step = 'AWAITING_NEW_SHOP_BANK_ACCOUNT';
-            bot.sendMessage(chatId, "💳 Nhập <b>Số tài khoản:</b>", { parse_mode: 'HTML' });
-        }
-        else if (state.step === 'AWAITING_NEW_SHOP_BANK_ACCOUNT') {
-            state.data.bank_account = text;
-            const conn = await pool.getConnection();
-            try {
-                await conn.beginTransaction();
-                const [u] = await conn.query('INSERT INTO users (username, password, role, full_name) VALUES (?, ?, "shop", ?)', [state.data.username, state.data.password, state.data.name]);
-                await conn.query('INSERT INTO shops (name, user_id, image_url, address, bank_code, bank_account, telegram_chat_id) VALUES (?,?,?,?,?,?,?)', 
-                    [state.data.name, u.insertId, `/uploads/${state.data.image}`, state.data.address, state.data.bank_code, state.data.bank_account, chatIdStr]);
-                await conn.commit();
-                
-                const successMsg = `🎉 <b>Tạo Shop thành công!</b>\n🏪 Tên: ${state.data.name}\n👤 TK: <code>${state.data.username}</code>\n🔑 MK: <code>${state.data.password}</code>\n\n<i>Shop của bạn đã hiện lên trên trang chủ Food!</i>`;
-                
-                const imgPath = path.join(__dirname, '../uploads', state.data.image);
-                if (fs.existsSync(imgPath)) {
-                    await bot.sendPhoto(chatId, fs.createReadStream(imgPath), { caption: successMsg, parse_mode: 'HTML' });
-                } else {
-                    await bot.sendMessage(chatId, successMsg, { parse_mode: 'HTML' });
-                }
-            } catch (e) { await conn.rollback(); console.error(e); bot.sendMessage(chatId, "❌ Lỗi tạo Shop."); }
-            finally { conn.release(); delete userStates[chatId]; }
-        }
-        else if (state.step === 'AWAITING_BANK_CODE') {
-            state.data.bank_code = text.toUpperCase(); state.step = 'AWAITING_BANK_ACCOUNT';
-            bot.sendMessage(chatId, "💳 Nhập <b>Số tài khoản:</b>");
-        }
-        else if (state.step === 'AWAITING_BANK_ACCOUNT') {
-            await pool.query('UPDATE shops SET telegram_chat_id = ?, bank_code = ?, bank_account = ? WHERE id = ?', [chatIdStr, state.data.bank_code, text, state.shopId]);
-            bot.sendMessage(chatId, "✅ Tích hợp ID thành công!");
-            delete userStates[chatId];
-        }
-    });
-
-    bot.on('callback_query', async (q) => {
-        const { data, message } = q;
-        const chatId = message.chat.id;
-        const chatIdStr = String(chatId);
-
-        if (data.startsWith('confirm_admin_del_')) {
-            const shopId = data.split('_')[3];
-            if (chatIdStr !== '5807941249') return;
-            const conn = await pool.getConnection();
-            try {
-                await conn.beginTransaction();
-
-                // 0. Get User ID associated with the Shop
-                const [shopInfo] = await conn.query('SELECT user_id FROM shops WHERE id = ?', [shopId]);
-                const userId = shopInfo.length > 0 ? shopInfo[0].user_id : null;
-
-                // 1. ORDER OF DELETION (NO MESSAGES TABLE)
-                await conn.query('DELETE FROM reviews WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ?)', [shopId]);
-                await conn.query('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ?)', [shopId]);
-                await conn.query('DELETE FROM orders WHERE shop_id = ?', [shopId]);
-                await conn.query('DELETE FROM favorites WHERE shop_id = ?', [shopId]);
-                await conn.query('DELETE FROM products WHERE shop_id = ?', [shopId]);
-                
-                // 2. Delete from shops table
-                await conn.query('DELETE FROM shops WHERE id = ?', [shopId]);
-
-                // 3. Delete from users table (The Owner)
-                if (userId) {
-                    await conn.query('DELETE FROM users WHERE id = ?', [userId]);
-                }
-
-                await conn.commit();
-                bot.editMessageText(`✅ Đã xóa vĩnh viễn Shop ID ${shopId} và Tài khoản chủ quán khỏi hệ thống.`, { chat_id: chatId, message_id: message.message_id });
-            } catch (e) { 
-                await conn.rollback(); 
-                console.error("[Delete Error]:", e); 
-                bot.sendMessage(chatId, `❌ Lỗi xóa Shop: ${e.message}`); 
-            }
-            finally { conn.release(); }
-        }
-        else if (data === 'cancel_admin_del') bot.editMessageText("❌ Đã hủy.", { chat_id: chatId, message_id: message.message_id });
-        else if (data === 'has_shop') {
-            const [rows] = await pool.query('SELECT id, name FROM shops WHERE telegram_chat_id IS NULL OR telegram_chat_id = ""');
-            const kb = rows.map(s => [{ text: s.name, callback_data: `select_shop_${s.id}` }]);
-            bot.sendMessage(chatId, "🏪 Chọn Shop của bạn:", { reply_markup: { inline_keyboard: kb } });
-        }
-        else if (data === 'no_shop') {
-            userStates[chatId] = { step: 'AWAITING_NEW_SHOP_IMAGE', data: {} };
-            bot.sendMessage(chatId, "🖼️ Gửi <b>Ảnh đại diện Shop:</b>", { parse_mode: 'HTML' });
-        }
-        else if (data.startsWith('select_shop_')) {
-            userStates[chatId] = { step: 'AWAITING_BANK_CODE', shopId: data.split('_')[2], data: {} };
-            bot.sendMessage(chatId, "🏦 Nhập <b>Mã ngân hàng:</b>", { parse_mode: 'HTML' });
-        }
-        else if (data.startsWith('refunded_')) {
-            const orderId = data.split('_')[1];
-            await pool.query("UPDATE orders SET payment_status = 'refunded', status = 'cancelled' WHERE id = ?", [orderId]);
-            
-            // Xóa tin nhắn chứa mã QR để nó "biến mất"
-            bot.deleteMessage(chatId, message.message_id).catch(() => {});
-            
-            // Gửi thông báo thành công mới
-            bot.sendMessage(chatId, `✅ <b>XÁC NHẬN:</b> Hoàn tiền đơn hàng <b>DH${orderId}</b> thành công!\nTrạng thái: <b>Đã hoàn trả tiền</b>`, { parse_mode: 'HTML' });
-        }
-        else if (data.startsWith('contact_cust_')) {
-            const orderId = data.split('_')[2];
-            try {
-                const [rows] = await pool.query(`
-                    SELECT u.email, u.full_name, u.phone 
-                    FROM orders o 
-                    JOIN users u ON o.user_id = u.id 
-                    WHERE o.id = ?`, [orderId]);
-                
-                if (rows.length > 0) {
-                    const customer = rows[0];
-                    const contactMsg = `📧 <b>THÔNG TIN LIÊN HỆ KHÁCH HÀNG (DH${orderId})</b>\n\n` +
-                                     `👤 Họ tên: <b>${customer.full_name}</b>\n` +
-                                     `✉️ Email: <code>${customer.email}</code>\n` +
-                                     `📞 SĐT: <code>${customer.phone || 'Chưa cập nhật'}</code>\n\n` +
-                                     `<i>Chủ shop vui lòng liên hệ qua Email hoặc SĐT trên để lấy lại thông tin ngân hàng chính xác.</i>`;
-                    
-                    bot.sendMessage(chatId, contactMsg, { parse_mode: 'HTML' });
-                } else {
-                    bot.sendMessage(chatId, "❌ Không tìm thấy thông tin khách hàng cho đơn này.");
-                }
-            } catch (err) {
-                console.error("Lỗi lấy thông tin liên hệ:", err);
-                bot.sendMessage(chatId, "❌ Lỗi hệ thống khi lấy thông tin liên hệ.");
-            }
-        }
-        else if (data.startsWith('del_prod_')) {
-            const prodId = data.split('_')[2];
-            try {
-                // Kiểm tra xem sản phẩm có thuộc shop của người dùng này không (bảo mật)
-                const [prodRows] = await pool.query('SELECT p.name, s.telegram_chat_id FROM products p JOIN shops s ON p.shop_id = s.id WHERE p.id = ?', [prodId]);
-                
-                if (prodRows.length > 0 && (prodRows[0].telegram_chat_id === chatIdStr || chatIdStr === '5807941249')) {
-                    const productName = prodRows[0].name;
-                    await pool.query('DELETE FROM products WHERE id = ?', [prodId]);
-                    bot.editMessageText(`✅ Đã xóa món: <b>${productName}</b>`, { 
-                        chat_id: chatId, 
-                        message_id: message.message_id,
-                        parse_mode: 'HTML'
-                    });
-                } else {
-                    bot.sendMessage(chatId, "❌ Bạn không có quyền xóa món này.");
-                }
-            } catch (e) {
-                console.error("Lỗi xóa món:", e);
-                bot.sendMessage(chatId, "❌ Lỗi hệ thống khi xóa món.");
-            }
-        }
-        bot.answerCallbackQuery(q.id);
-    });
-    } catch (err) {
-        console.error("❌ Lỗi Telegram Bot Initialization:", err);
-    }
+    } catch (e) {}
 }
 
 module.exports = function(io) {
     cron.schedule('* * * * *', async () => {
         try {
-            const [orders] = await pool.query(`
-                SELECT o.id, o.shop_id, o.total_price, u.full_name as customer_name, 
-                       o.customer_bank_code, o.customer_bank_account,
-                       s.name as shopName, s.telegram_chat_id as shopChatId
-                FROM orders o
-                JOIN users u ON o.user_id = u.id
-                JOIN shops s ON o.shop_id = s.id
-                WHERE o.payment_status = 'paid' AND o.status IN ('pending', 'finding_driver')
-                AND o.paid_at < NOW() - INTERVAL 2 MINUTE AND o.refund_notified = 0
-            `);
-            for (const o of orders) {
-                const amount = Math.round(o.total_price);
-                const bankCode = o.customer_bank_code || 'MB';
-                const accountNo = o.customer_bank_account || '';
-                const orderCode = `DH${o.id}`;
-
-                // Tạo mã QR VietQR để chuyển khoản nhanh
-                const qrUrl = `https://img.vietqr.io/image/${bankCode}-${accountNo}-compact2.jpg?amount=${amount}&addInfo=HOAN TIEN ${orderCode}`;
-
-                const msg = `⚠️ <b>YÊU CẦU HOÀN TIỀN ${orderCode}</b>\n\n` +
-                            `💰 Số tiền: <b>${new Intl.NumberFormat('vi-VN').format(amount)}đ</b>\n` +
-                            `👤 Khách hàng: <b>${o.customer_name}</b>\n` +
-                            `🏦 Ngân hàng: <b>${bankCode}</b>\n` +
-                            `💳 Số TK: <code>${accountNo}</code>\n\n` +
-                            `<i>Vui lòng quét mã QR bên dưới để hoàn tiền nhanh!</i>`;
-
-                const target = o.shopChatId || process.env.TELEGRAM_CHAT_ID;
-
-                if (target) {
-                    try {
-                        await bot.sendPhoto(target, qrUrl, {
-                            caption: msg,
-                            parse_mode: 'HTML',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '✅ Đã hoàn tiền', callback_data: `refunded_${o.id}` }],
-                                    [{ text: '📞 Liên hệ (Sai thông tin)', callback_data: `contact_cust_${o.id}` }]
-                                ]
-                            }
-                        });
-                    } catch (err) {
-                        console.error("Lỗi gửi ảnh QR hoàn tiền:", err.message);
-                        // Nếu lỗi gửi ảnh (ví dụ URL lỗi), gửi tin nhắn văn bản thay thế
-                        bot.sendMessage(target, msg, {
-                            parse_mode: 'HTML',
-                            reply_markup: {
-                                inline_keyboard: [[{ text: '✅ Đã xác nhận hoàn tiền', callback_data: `refunded_${o.id}` }]]
-                            }
-                        });
-                    }
-                }
-                await pool.query('UPDATE orders SET refund_notified = 1 WHERE id = ?', [o.id]);
-            }        } catch (e) { console.error("Cron error:", e); }
+            const [orders] = await pool.query(`SELECT id FROM orders WHERE payment_status = 'paid' AND status IN ('pending', 'finding_driver') AND paid_at < NOW() - INTERVAL 2 MINUTE AND refund_notified = 0`);
+            for (const o of orders) await sendRefundNotification(o.id);
+        } catch (e) {}
     });
+    cron.schedule('0 23 * * *', async () => { await sendDailyReport(); });
     console.log('🚀 Service Started (V3)');
-    return { bot };
+    return { bot, sendRefundNotification, sendAnimatedGif };
 };

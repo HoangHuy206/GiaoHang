@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(255) UNIQUE NOT NULL,
   password VARCHAR(255) NOT NULL,
-  role ENUM('user', 'driver', 'shop') NOT NULL,
+  role ENUM('user', 'driver', 'shop', 'admin') NOT NULL,
   full_name VARCHAR(255),
   avatar_url VARCHAR(255),
   phone VARCHAR(20),
@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS shops (
   bank_code VARCHAR(50) DEFAULT 'MB',
   bank_account VARCHAR(50) DEFAULT '0396222614',
   telegram_chat_id VARCHAR(50),
+  is_active TINYINT(1) DEFAULT 1,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
@@ -45,7 +46,11 @@ CREATE TABLE IF NOT EXISTS orders (
   shop_id INT NOT NULL,
   driver_id INT,
   status ENUM('pending', 'confirmed', 'finding_driver', 'driver_assigned', 'picked_up', 'delivered', 'cancelled') DEFAULT 'pending',
+  payment_status ENUM('unpaid', 'paid', 'refunded') DEFAULT 'unpaid',
   total_price DECIMAL(10, 2) NOT NULL,
+  items_price DECIMAL(10, 2) DEFAULT 0,
+  delivery_fee DECIMAL(10, 2) DEFAULT 0,
+  discount DECIMAL(10, 2) DEFAULT 0,
   delivery_address TEXT,
   delivery_lat DECIMAL(10, 8),
   delivery_lng DECIMAL(11, 8),
@@ -53,6 +58,8 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_bank_code VARCHAR(50),
   customer_bank_account VARCHAR(50),
   customer_bank_name VARCHAR(255),
+  refund_notified TINYINT(1) DEFAULT 0,
+  paid_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (shop_id) REFERENCES shops(id),
@@ -95,4 +102,22 @@ CREATE TABLE IF NOT EXISTS transactions (
   content TEXT,
   gateway VARCHAR(50),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bot_users (
+  chat_id VARCHAR(50) PRIMARY KEY,
+  last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  order_id INT NOT NULL,
+  user_id INT NOT NULL,
+  shop_id INT NOT NULL,
+  rating INT NOT NULL,
+  comment TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (order_id) REFERENCES orders(id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (shop_id) REFERENCES shops(id)
 );

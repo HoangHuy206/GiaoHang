@@ -18,6 +18,8 @@ import PageNotFound from '../assets/img/A404/l404.vue';
 
 import hotro from '../views/hotro.vue';
 
+import { useToastStore } from '../stores/toast';
+
 const routes = [
   { path: '/', component: Home ,meta: { title: 'Trang chủ - Giao Hàng' } },
   { path: '/login', component: Login ,meta: { title: 'Đăng nhập ' } },
@@ -29,12 +31,12 @@ const routes = [
   { path: '/giohang', component: GioHang , meta: { title: 'Giỏ Hàng', requiresAuth: true } },
   { path: '/theodoidonhang', component: TheoDoiDonHang, meta: { title: 'Theo dõi đơn hàng', requiresAuth: true } },
   { path: '/thanhtoan', component: ThanhToan, meta: { title: 'Thanh toán', requiresAuth: true } },
-  { path: '/trangchutaixe', component: TrangChuTaiXe, meta: { title: 'Trang chủ tài xế', requiresAuth: true } }, 
-  { path: '/shop-admin', component: ShopDashboard, meta: { title: 'Shop', requiresAuth: true } }, 
+  { path: '/trangchutaixe', component: TrangChuTaiXe, meta: { title: 'Trang chủ tài xế', requiresAuth: true } },
+  { path: '/shop-admin', component: ShopDashboard, meta: { title: 'Shop', requiresAuth: true } },
   { path: '/shop-stats', component: ShopStats, meta: { title: 'Thống kê Shop', requiresAuth: true } },
   { path: '/admin', component: AdminDashboard, meta: { title: 'Quản trị hệ thống', requiresAuth: true } },
   { path: '/profile', component: Profile, meta: { title: 'Trang cá nhân', requiresAuth: true } },
- 
+
   { path: '/hotro', component: hotro, meta: { title: 'Trung Tâm Hỗ Trợ' } },
   { path: '/:pathMatch(.*)*', component: PageNotFound, meta: { title: '404 - Không tìm thấy trang' } },
 ];
@@ -47,6 +49,7 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   document.title = to.meta.title || 'Giao Hàng Tận Nơi';
 
+  const toast = useToastStore();
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
 
@@ -63,11 +66,10 @@ router.beforeEach((to, from, next) => {
 
   if (to.meta.requiresAuth && !user) {
     // Nếu trang yêu cầu đăng nhập mà chưa có user -> chuyển về login
-    alert("Bạn cần đăng nhập để truy cập trang này!");
+    toast.warning("Bạn cần đăng nhập để truy cập trang này!");
     next('/login');
   } else {
     next();
   }
 });
-
 export default router;

@@ -47,6 +47,10 @@
                     <label class="block text-sm font-medium text-gray-700">Telegram Chat ID (Nhận thông báo)</label>
                     <input v-model="shopConfig.telegram_chat_id" type="text" placeholder="Lấy từ bot GHTN" class="mt-1 block w-full border border-gray-300 rounded-md p-2">
                 </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Ảnh Bìa Shop (Banner)</label>
+                    <input type="file" @change="handleBannerUpload" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                </div>
                 <div class="pt-4">
                     <button @click="updateShopInfo" :disabled="submittingConfig" class="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition">
                         {{ submittingConfig ? 'Đang lưu...' : 'Lưu Cấu Hình' }}
@@ -94,16 +98,26 @@
        <div v-for="order in orders" :key="order.id" class="bg-white rounded-lg shadow-md overflow-hidden border-l-4" :class="getBorderColor(order.status)">
            <div class="p-4 flex justify-between items-start">
                <div class="flex gap-4">
-                   <!-- Product Image -->
-                   <div class="w-16 h-16 rounded-lg overflow-hidden border border-gray-200 shrink-0">
+                   <!-- Product Image (First item image) -->
+                   <div class="w-20 h-20 rounded-lg overflow-hidden border border-gray-200 shrink-0">
                        <img :src="getImageUrl(order.first_product_image)" alt="Product" class="w-full h-full object-cover">
                    </div>
                    <div>
-                       <h3 class="font-bold text-lg">Đơn #{{ order.id }} - {{ order.user_name }}</h3>
-                       <p class="text-sm text-gray-600">{{ new Date(order.created_at).toLocaleString() }}</p>
-                       <p class="mt-2 font-bold text-red-600">Tổng: {{ formatPrice(order.total_price) }}</p>
-                       <p class="text-sm mt-1">Giao đến: {{ order.delivery_address }}</p>
-                       <p class="text-sm mt-1 font-semibold text-blue-600">Trạng thái: {{ formatStatus(order.status) }}</p>
+                       <h3 class="font-bold text-lg">Đơn #{{ order.order_code }} - {{ order.user_name }}</h3>
+                       <p class="text-xs text-gray-500 mb-2">{{ new Date(order.created_at).toLocaleString() }}</p>
+                       
+                       <!-- Danh sách món ăn thực tế -->
+                       <div class="bg-gray-50 p-2 rounded-md mb-2 border border-gray-100">
+                           <p v-for="item in order.items" :key="item.id" class="text-sm text-gray-700">
+                               • <span class="font-bold text-green-700">{{ item.quantity }}x</span> {{ item.product_name }}
+                           </p>
+                       </div>
+
+                       <p class="font-bold text-red-600">Tổng: {{ formatPrice(order.total_price) }}</p>
+                       <p class="text-sm mt-1 text-gray-600 italic">📍 {{ order.delivery_address }}</p>
+                       <p class="text-sm mt-1 font-semibold" :class="order.status === 'completed' ? 'text-green-600' : 'text-blue-600'">
+                           Trạng thái: {{ formatStatus(order.status) }}
+                       </p>
                    </div>
                </div>
                <div class="flex flex-col space-y-2">
@@ -161,7 +175,8 @@ const shopConfig = reactive({
     address: '',
     bank_code: '',
     bank_account: '',
-    telegram_chat_id: ''
+    telegram_chat_id: '',
+    banner: null // Thêm trường banner
 });
 
 const newProd = reactive({
@@ -175,11 +190,28 @@ const handleFileUpload = (e) => {
     newProd.image = e.target.files[0];
 };
 
+const handleBannerUpload = (e) => {
+    shopConfig.banner = e.target.files[0];
+};
+
 const updateShopInfo = async () => {
     if (!myShopId.value) return;
     submittingConfig.value = true;
     try {
-        await axios.put(`${API_BASE_URL}/api/shops/${myShopId.value}`, shopConfig);
+        const formData = new FormData();
+        formData.append('name', shopConfig.name);
+        formData.append('address', shopConfig.address);
+        formData.append('bank_code', shopConfig.bank_code);
+        formData.append('bank_account', shopConfig.bank_account);
+        formData.append('telegram_chat_id', shopConfig.telegram_chat_id);
+        if (shopConfig.banner) {
+            formData.append('banner', shopConfig.banner);
+        }
+
+        await axios.put(`${API_BASE_URL}/api/shops/${myShopId.value}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        
         toast.success("Cập nhật thông tin Shop thành công!");
         showConfig.value = false;
         fetchOrders(); // Refresh data

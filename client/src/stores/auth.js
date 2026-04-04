@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
+import { useCartStore } from './cart';
 
 const API_URL = `${API_BASE_URL}/api`;
 
@@ -22,6 +23,10 @@ export const useAuthStore = defineStore('auth', {
           // Cấu hình axios gửi token cho các request sau
           axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
           
+          // Nạp lại giỏ hàng của user này
+          const cart = useCartStore();
+          cart.loadFromStorage();
+          
           return true;
         }
       } catch (error) {
@@ -42,6 +47,10 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('user');
       localStorage.removeItem('token');
       delete axios.defaults.headers.common['Authorization'];
+      
+      // Nạp lại giỏ hàng cho khách (guest)
+      const cart = useCartStore();
+      cart.loadFromStorage();
     }
   }
 });

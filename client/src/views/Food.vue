@@ -8,36 +8,92 @@ import { useToastStore } from '../stores/toast'
 
 const toast = useToastStore()
 const getImageUrl = (url) => {
-    if (!url) return new URL('@/assets/img/anhND/anhdaidienmacdinh.jpg', import.meta.url).href;
+    if (!url) return `${API_BASE_URL}/uploads/anhdaidienmacdinh.jpg`;
     
-    // Lấy tên file nguyên bản
-    const fileName = url.split('/').pop();
+    // Nếu là URL tuyệt đối (http/https)
+    if (url.startsWith('http')) {
+        return url.replace('http://localhost:3000', API_BASE_URL);
+    }
 
-    // Danh sách ảnh trong thư mục anhND
+    // Nếu đường dẫn đã chứa /uploads/ hoặc uploads/
+    if (url.includes('uploads/')) {
+        const path = url.startsWith('/') ? url : `/${url}`;
+        return `${API_BASE_URL}${path}`;
+    }
+
+    // Trường hợp là ảnh mẫu (static assets) cũ còn sót lại trong DB
+    const fileName = url.split('/').pop();
     const ndImages = ['comngon.jpg', 'lotte.jpg', 'comtho.jpg', 'gaham.jpg', 'toco.jpg', 'buncham.jpg', 'mixue.jpg', 'anhdaidienmacdinh.jpg'];
     if (ndImages.includes(fileName)) {
         return new URL(`../assets/img/anhND/${fileName}`, import.meta.url).href;
     }
 
-    // Danh sách ảnh trong thư mục anhquanan
-    const quanImages = ['pho-ga-anh-thu.png'];
-    if (quanImages.includes(fileName)) {
-        return new URL(`../assets/img/anhquanan/${fileName}`, import.meta.url).href;
-    }
-
-    if (url.startsWith('http')) return url;
-    
-    const path = url.startsWith('/') ? url : `/${url}`;
-    return `${API_BASE_URL}${path}`;
+    // Mặc định ném vào thư mục uploads của server
+    return `${API_BASE_URL}/uploads/${url.startsWith('/') ? url.slice(1) : url}`;
 };
 
 // --- 2. IMPORT EVENT BUS TỪ GIỎ HÀNG (Mới thêm) ---
 import { cartBus } from '@/utils/cartBus.js' 
 
 import { useAuthStore } from '../stores/auth'
+import { useCartStore } from '../stores/cart'
 
 const auth = useAuthStore()
+const cart = useCartStore()
 const isMenuOpen = ref(false)
+
+// --- HIỆU ỨNG BAY VÀO GIỎ HÀNG ---
+const flyToCart = (event, imageUrl) => {
+  const btn = event.currentTarget;
+  const btnRect = btn.getBoundingClientRect();
+  
+  const cartIcon = document.querySelector('.cart-icon-wrapper');
+  if (!cartIcon) return;
+  const cartRect = cartIcon.getBoundingClientRect();
+
+  const flyer = document.createElement('img');
+  flyer.className = 'food-flyer';
+  flyer.src = imageUrl || getImageUrl(null); // Sử dụng ảnh sản phẩm thật
+  
+  flyer.style.left = `${btnRect.left}px`;
+  flyer.style.top = `${btnRect.top}px`;
+  flyer.style.width = '50px';
+  flyer.style.height = '50px';
+  flyer.style.borderRadius = '50%';
+  flyer.style.objectFit = 'cover';
+  flyer.style.boxShadow = '0 4px 10px rgba(0,0,0,0.3)';
+  document.body.appendChild(flyer);
+
+  const diffX = cartRect.left + cartRect.width / 2 - (btnRect.left + 25);
+  const diffY = cartRect.top + cartRect.height / 2 - (btnRect.top + 25);
+
+  requestAnimationFrame(() => {
+    // Chỉnh thời gian transition thành 1.2s để bay chậm hơn
+    flyer.style.transition = 'all 1.2s cubic-bezier(0.42, 0, 0.58, 1)';
+    flyer.style.transform = `translate(${diffX}px, ${diffY}px) scale(0.2) rotate(360deg)`;
+    flyer.style.opacity = '0.7';
+  });
+
+  setTimeout(() => {
+    flyer.remove();
+  }, 1200);
+};
+
+const addToCartWithAnimation = (event, food) => {
+  // 1. Chạy hiệu ứng bay (Dùng ảnh sản phẩm)
+  flyToCart(event, getImageUrl(food.image_url));
+  
+  // 2. Cập nhật Store ngay lập tức để số lượng trên Header nhảy luôn
+  cart.addToCart(food, food.shop_id, food.shop_name);
+
+  // 3. Mở giỏ hàng sau khi hiệu ứng bay gần xong (khoảng 800ms)
+  setTimeout(() => {
+    cartBus.emit('open-cart');
+  }, 800);
+  
+  toast.success(`Đã thêm ${food.name}`);
+};
+
 const activeTab = ref('nguoi-dung')
 const searchQuery = ref('')
 
@@ -273,16 +329,22 @@ const filteredFoods = computed(() => {
       <div v-if="searchQuery && filteredFoods.length > 0" class="mb-10">
           <h2 class="title-section">Món ăn tìm thấy</h2>
           <div class="food-grid">
-              <router-link v-for="food in filteredFoods" :key="food.id" :to="'/restaurant/' + food.shop_id" class="food-card">
-                  <div class="food-img-box">
-                      <img :src="getImageUrl(food.image_url)" alt="food">
-                  </div>
-                  <div class="food-info">
-                      <h4 class="food-name">{{ food.name }}</h4>
-                      <p class="food-price">{{ new Intl.NumberFormat('vi-VN').format(food.price) }}đ</p>
-                      <p class="shop-name">Tại: {{ food.shop_name }}</p>
-                  </div>
-              </router-link>
+              <div v-for="food in filteredFoods" :key="food.id" class="food-card">
+                  <router-link :to="'/restaurant/' + food.shop_id" class="food-link">
+                    <div class="food-img-box">
+                        <img :src="getImageUrl(food.image_url)" alt="food" loading="lazy">
+                    </div>
+                    <div class="food-info">
+                        <h4 class="food-name">{{ food.name }}</h4>
+                        <p class="food-price">{{ new Intl.NumberFormat('vi-VN').format(food.price) }}đ</p>
+                        <p class="shop-name">Tại: {{ food.shop_name }}</p>
+                    </div>
+                  </router-link>
+                  <!-- Add to Cart Button -->
+                  <button class="add-food-btn" @click.stop.prevent="addToCartWithAnimation($event, food)">
+                    <span class="plus-icon">+</span>
+                  </button>
+              </div>
           </div>
           <div class="separator"></div>
       </div>
@@ -296,14 +358,20 @@ const filteredFoods = computed(() => {
               <span class="promo-label">Promo</span>
             </div>
             <div class="info-box">
-              <h3 class="res-name">{{ res.name }}</h3>
+              <h3 class="res-name notranslate">{{ res.name }}</h3>
               <p class="res-type">{{ res.type }}</p>
               <div class="res-meta">
-                <span>⭐ {{ res.rating }}</span>
+                <span class="flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#f1c40f" stroke="#f1c40f"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                  {{ res.rating }}
+                </span>
                 <span>{{ res.time }} • {{ res.distance }}</span>
               </div>
               <div class="res-discount">
-                <span class="icon">🎫</span> {{ res.promo }}
+                <span class="icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-1.41 1.41L15.17 8H2V10h13.17l-1.59 1.59L15 13l4-4-4-4zM11 19l1.41-1.41L10.83 16H24v-2H10.83l1.59-1.59L11 11l-4 4 4 4z"></path></svg>
+                </span> 
+                {{ res.promo }}
               </div>
             </div>
           </router-link>
@@ -550,6 +618,33 @@ const filteredFoods = computed(() => {
     background: #e0e0e0;
     margin: 30px 0;
 }
+
+/* Add Food Button */
+.food-card { position: relative; }
+.add-food-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  background: #00b14f;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,177,79,0.3);
+  transition: all 0.2s;
+  z-index: 10;
+}
+.add-food-btn:hover {
+  transform: scale(1.1);
+  background: #009e39;
+}
+.plus-icon { font-size: 20px; font-weight: bold; line-height: 1; }
+
 /* Mobile Responsive */
 @media (max-width: 1024px) {
   .search-overlay { padding-left: 40px; }
@@ -591,5 +686,18 @@ const filteredFoods = computed(() => {
   .search-box .title { font-size: 16px; }
   .restaurant-grid { grid-template-columns: 1fr; }
   .image-box { height: 200px; }
+}
+</style>
+
+<style>
+/* Hiệu ứng bay toàn cục (vì flyer append vào body) */
+.food-flyer {
+  position: fixed;
+  z-index: 9999;
+  font-size: 24px;
+  pointer-events: none;
+  transition: all 0.8s cubic-bezier(0.42, 0, 0.58, 1);
+  opacity: 1;
+  transform: scale(1);
 }
 </style>

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import StandardHeader from '../components/StandardHeader.vue'
 import { useAuthStore } from '../stores/auth'
 import { useToastStore } from '../stores/toast'
+import { useConfirmStore } from '../stores/confirm'
 import axios from 'axios'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -17,6 +18,7 @@ import ChatBox from '../components/ChatBox.vue'
 const router = useRouter()
 const auth = useAuthStore()
 const toast = useToastStore()
+const confirmStore = useConfirmStore()
 
 // ====== TRẠNG THÁI GIAO DIỆN ======
 const isOnline = ref(false)
@@ -85,10 +87,11 @@ const handleFileChange = async (event) => {
     } catch (e) { toast.error("Lỗi: " + e.message); }
 };
 
-const handleLogout = () => {
-  if (confirm('Bạn có chắc chắn muốn đăng xuất?')) {
+const handleLogout = async () => {
+  const confirmed = await confirmStore.ask("Bạn có chắc chắn muốn đăng xuất không?");
+  if (confirmed) {
     auth.logout();
-    toast.info("Đã đăng xuất.");
+    toast.info("Đã đăng xuất thành công.");
     router.push('/login');
   }
 }
@@ -232,7 +235,7 @@ const acceptOrder = async () => {
 
 const completeOrder = async () => {
     if (!currentOrder.value) return;
-    if (!confirm("Xác nhận đã giao hàng thành công?")) return;
+    // Bỏ confirm trình duyệt để mượt mà hơn
     try {
         const orderId = currentOrder.value.orderId || currentOrder.value.id;
         await axios.put(`${API_BASE_URL}/api/orders/${orderId}/status`, { status: 'delivered' });

@@ -31,30 +31,40 @@
             </div>
 
             <div class="cart-items-list">
-              <div v-for="(item, index) in cartItems" :key="index" class="cart-item">
-
-                <div class="item-checkbox">
-                  <input type="checkbox" v-model="item.selected" class="custom-checkbox">
+              <p v-if="cart.items.length > 0" class="cart-note text-[10px] text-orange-600 bg-orange-50 p-2 mb-2 rounded border border-orange-100">
+                💡 Lưu ý: Bạn chỉ có thể chọn thanh toán món của 1 quán duy nhất trong mỗi đơn hàng.
+              </p>
+              <div v-for="group in cart.groupedItems" :key="group.shopId" class="shop-group-wrapper mb-4">
+                <div class="shop-header-in-cart bg-green-50 p-3 rounded mb-2 flex items-center gap-3 border-l-4 border-green-500 shadow-sm">
+                   <div class="shop-icon-circle bg-green-500 text-white p-1.5 rounded-full flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                   </div>
+                   <span class="font-bold text-green-800 notranslate text-base">{{ group.shopName }}</span>
                 </div>
 
-                <div class="item-quantity-control">
-                  <button @click="decreaseQty(index)" class="qty-btn">-</button>
-                  <span class="qty-number">{{ item.quantity }}</span>
-                  <button @click="increaseQty(index)" class="qty-btn">+</button>
-                </div>
+                <div v-for="(item, index) in group.items" :key="item.productId" class="cart-item">
+                  <div class="item-checkbox">
+                    <input type="checkbox" v-model="item.selected" @change="cart.saveToStorage()" class="custom-checkbox">
+                  </div>
 
-                <div class="item-info">
-                  <span class="item-name">{{ item.name }}</span>
-                  <span class="item-note" v-if="item.note">{{ item.note }}</span>
-                </div>
+                  <div class="item-quantity-control">
+                    <button @click="decreaseQtyByItem(item)" class="qty-btn">-</button>
+                    <span class="qty-number">{{ item.quantity }}</span>
+                    <button @click="increaseQtyByItem(item)" class="qty-btn">+</button>
+                  </div>
 
-                <div class="item-actions">
-                  <div class="item-price">{{ formatCurrency(item.price * item.quantity) }}</div>
-                  <button class="delete-item-btn" @click="removeItem(index)" title="Xóa món này">
-                    🗑️
-                  </button>
-                </div>
+                  <div class="item-info">
+                    <span class="item-name">{{ item.name }}</span>
+                    <span class="item-note" v-if="item.note">{{ item.note }}</span>
+                  </div>
 
+                  <div class="item-actions">
+                    <div class="item-price">{{ formatCurrency(item.price * item.quantity) }}</div>
+                    <button class="delete-item-btn" @click="removeItemById(item.productId)" title="Xóa món này">
+                      🗑️
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -87,141 +97,148 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { cartBus } from '../utils/cartBus';
+import { useCartStore } from '../stores/cart';
+import { useToastStore } from '../stores/toast';
+import { useConfirmStore } from '../stores/confirm';
 
 export default {
   name: "GioHang",
   setup() {
-    const CART_KEY = 'myShoppingCart';
-    const TEMP_KEY = 'tempCart';
-
+    const cart = useCartStore();
+    const toast = useToastStore();
+    const confirmStore = useConfirmStore();
     const isVisible = ref(false);
-    const cartItems = ref([]);
     const router = useRouter();
     const route = useRoute();
 
-    const syncCart = () => {
-      const savedCart = localStorage.getItem(CART_KEY);
-      if (savedCart) {
-        try {
-          let items = JSON.parse(savedCart);
-          items = items.map(i => ({ ...i, selected: i.selected !== undefined ? i.selected : true }));
-          cartItems.value = items;
-        } catch (e) {
-          cartItems.value = [];
-        }
-      } else {
-        cartItems.value = [];
-      }
-    };
-
-    const persistCart = () => {
-      // Lưu giỏ chính (cartItems) vào localStorage
-      if (cartItems.value.length > 0) {
-        localStorage.setItem(CART_KEY, JSON.stringify(cartItems.value));
-      } else {
-        localStorage.removeItem(CART_KEY);
-      }
-    };
-
-    onMounted(() => syncCart());
-    watch(() => route.path, () => syncCart());
-
-    watch(cartItems, () => {
-      persistCart();
-    }, { deep: true });
-
     // --- TÍNH TOÁN ---
-    const totalItems = computed(() =>
-      cartItems.value.reduce((total, item) => total + item.quantity, 0)
-    );
+    const cartItems = computed(() => cart.items);
+    
+    const totalItems = computed(() => cart.itemCount);
 
     const subTotal = computed(() => {
-      return cartItems.value
-        .filter(item => item.selected)
+      return cart.items
+        .filter(item => item.selected !== false)
         .reduce((sum, item) => sum + (item.price * item.quantity), 0);
     });
 
-    const selectedCount = computed(() => cartItems.value.filter(i => i.selected).length);
+    const selectedCount = computed(() => cart.items.filter(i => i.selected !== false).length);
 
     const isSelectAll = computed({
-      get: () => cartItems.value.length > 0 && cartItems.value.every(i => i.selected),
-      set: () => { /* xử lý ở toggleSelectAll */ }
+      get: () => cart.items.length > 0 && cart.items.every(i => i.selected !== false),
+      set: (val) => {
+        cart.items.forEach(item => item.selected = val);
+      }
     });
 
     const toggleSelectAll = (e) => {
       const checked = e.target.checked;
-      cartItems.value.forEach(item => item.selected = checked);
+      cart.items.forEach(item => item.selected = checked);
     };
+
+    const itemCount = computed(() => cart.itemCount);
+    const groupedItems = computed(() => cart.groupedItems);
 
     const formatCurrency = (val) =>
       new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
 
-    const increaseQty = (index) => cartItems.value[index].quantity++;
-
-    const decreaseQty = (index) => {
-      if (cartItems.value[index].quantity > 1) cartItems.value[index].quantity--;
-      else removeItem(index);
+    const increaseQty = (index) => {
+      cart.items[index].quantity++;
+      cart.saveToStorage();
     };
 
-    // --- XÓA ---
-    const removeItem = (index) => {
-      if (confirm("Bạn muốn xóa món này khỏi giỏ?")) {
-        cartItems.value.splice(index, 1);
+    const decreaseQty = (index) => {
+      if (cart.items[index].quantity > 1) {
+        cart.items[index].quantity--;
+        cart.saveToStorage();
+      } else {
+        removeItem(index);
       }
     };
 
-    const removeSelected = () => {
-      if (confirm(`Bạn chắc chắn muốn xóa ${selectedCount.value} món đang chọn?`)) {
-        cartItems.value = cartItems.value.filter(item => !item.selected);
+    const increaseQtyByItem = (item) => {
+      item.quantity++;
+      cart.saveToStorage();
+    };
+
+    const decreaseQtyByItem = (item) => {
+      if (item.quantity > 1) {
+        item.quantity--;
+        cart.saveToStorage();
+      } else {
+        removeItemById(item.productId);
+      }
+    };
+
+    const removeItemById = async (productId) => {
+      const confirmed = await confirmStore.ask("Bạn muốn xóa món này khỏi giỏ hàng?");
+      if (confirmed) {
+        cart.removeFromCart(productId);
+        toast.success("Đã xóa món ăn.");
+      }
+    };
+
+    const removeItem = async (index) => {
+      const confirmed = await confirmStore.ask("Bạn muốn xóa món này khỏi giỏ hàng?");
+      if (confirmed) {
+        cart.items.splice(index, 1);
+        cart.saveToStorage();
+        toast.success("Đã xóa món ăn.");
+      }
+    };
+
+    const removeSelected = async () => {
+      const count = selectedCount.value;
+      if (count > 0) {
+        const confirmed = await confirmStore.ask(`Bạn chắc chắn muốn xóa ${count} món đang chọn khỏi giỏ hàng?`);
+        if (confirmed) {
+          cart.items = cart.items.filter(item => item.selected === false);
+          cart.saveToStorage();
+          toast.success(`Đã xóa ${count} món.`);
+        }
       }
     };
 
     const openCart = () => isVisible.value = true;
     const closeCart = () => isVisible.value = false;
 
-    // ✅ FIX CHÍNH: BẤM MUA HÀNG -> LƯU tempCart + XÓA CÁC MÓN ĐÃ CHỌN KHỎI GIỎ CHÍNH
     const goToCheckout = () => {
-      const itemsToPay = cartItems.value.filter(item => item.selected);
-      if (itemsToPay.length === 0) return alert("Vui lòng tích chọn món cần thanh toán!");
+      const itemsToPay = cart.items.filter(item => item.selected !== false);
+      if (itemsToPay.length === 0) {
+        toast.warning("Vui lòng tích chọn món cần thanh toán!");
+        return;
+      }
 
-      // 1) Lưu giỏ tạm để trang thanh toán dùng
-      localStorage.setItem(TEMP_KEY, JSON.stringify(itemsToPay));
+      // --- KIỂM TRA QUÁN ---
+      // Lấy danh sách ID các quán từ các món đã chọn
+      const shopIds = [...new Set(itemsToPay.map(item => item.shopId))];
+      
+      if (shopIds.length > 1) {
+        toast.warning("Bạn chỉ có thể thanh toán món ăn của 1 quán trong mỗi đơn hàng. Vui lòng bỏ chọn các món của quán khác!");
+        return;
+      }
 
-      // 2) XÓA các món đã chọn khỏi giỏ chính
-      cartItems.value = cartItems.value.filter(item => !item.selected);
-
-      // Nếu bạn muốn đặt xong là xóa sạch giỏ, dùng dòng này thay cho filter ở trên:
-      // cartItems.value = [];
-
-      // 3) Lưu lại giỏ mới
-      persistCart();
-
+      localStorage.setItem('tempCart', JSON.stringify(itemsToPay));
+      
+      // Không xóa món ở đây nữa, chỉ xóa sau khi thanh toán thành công tại trang ThanhToan.vue
+      
       closeCart();
       router.push('/thanhtoan');
     };
 
     cartBus.on('add-to-cart', (product) => {
-      // Ensure product has shopId if possible.
-      // If product object comes from Restaurant, it might not have shopId if it's nested.
-      // But let's assume 'product' object is what we get.
-      
-      const existingItem = cartItems.value.find(item => item.id === product.id && item.name === product.name);
-
-      if (existingItem) {
-        existingItem.quantity++;
-        existingItem.selected = true;
-      } else {
-        cartItems.value.push({ ...product, quantity: 1, selected: true });
-      }
+      // Bây giờ việc thêm vào store được xử lý trực tiếp tại View để đảm bảo tốc độ
+      // Event này chỉ dùng để kích hoạt mở giỏ hàng nếu cần
       isVisible.value = true;
     });
 
     cartBus.on('open-cart', openCart);
 
     return {
-      isVisible, cartItems, totalItems, subTotal, selectedCount,
+      cart, isVisible, cartItems, totalItems, subTotal, selectedCount,
       formatCurrency, increaseQty, decreaseQty, removeItem, removeSelected,
-      closeCart, goToCheckout, isSelectAll, toggleSelectAll
+      closeCart, goToCheckout, isSelectAll, toggleSelectAll,
+      groupedItems, decreaseQtyByItem, increaseQtyByItem, removeItemById
     };
   }
 };
