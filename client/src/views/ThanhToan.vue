@@ -274,10 +274,12 @@ export default {
         clearInterval(timerInterval); clearInterval(checkInterval);
         new Audio('/sounds/Download-_1_.mp3').play().catch(() => {});
         
-        // --- XÓA MÓN KHỎI GIỎ HÀNG CHÍNH ---
-        const paidProductIds = items.value.map(i => i.productId || i.id);
-        cartStore.items = cartStore.items.filter(item => !paidProductIds.includes(item.productId));
-        cartStore.saveToStorage();
+        // --- XÓA MÓN KHỎI GIỎ HÀNG CHÍNH THEO QUÁN ---
+        if (items.value.length > 0) {
+            const sid = items.value[0].shopId;
+            cartStore.items = cartStore.items.filter(item => item.shopId !== sid);
+            cartStore.saveToStorage();
+        }
 
         localStorage.removeItem('tempCart');
         toast.success("Thanh toán thành công!");
@@ -348,7 +350,17 @@ export default {
            });
            if (res.data.success) {
                if (paymentMethod.value === 'banking') await generateNewQR(res.data.orderId, res.data.orderCode);
-               else { toast.success("Đặt đơn thành công!"); router.push('/theodoidonhang'); }
+               else { 
+                   // --- XÓA MÓN KHỎI GIỎ HÀNG CHÍNH CHO TIỀN MẶT ---
+                   if (items.value.length > 0) {
+                       const sid = items.value[0].shopId;
+                       cartStore.items = cartStore.items.filter(item => item.shopId !== sid);
+                       cartStore.saveToStorage();
+                   }
+                   localStorage.removeItem('tempCart');
+                   toast.success("Đặt đơn thành công!"); 
+                   router.push('/theodoidonhang'); 
+               }
            }
        } catch (e) { toast.error("Lỗi đặt đơn!"); } finally { dangXuLy.value = false; }
     };
@@ -376,12 +388,29 @@ export default {
         }
         if (mapInstance) mapInstance.remove();
         
-        mapInstance = L.map('map-selection').setView([selectedCoords.value.lat, selectedCoords.value.lng], 16);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap'
+        mapInstance = L.map('map-selection', {
+            zoomControl: false,
+            attributionControl: false
+        }).setView([selectedCoords.value.lat, selectedCoords.value.lng], 16);
+
+        L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
         }).addTo(mapInstance);
+
+        L.control.zoom({ position: 'bottomright' }).addTo(mapInstance);
         
-        markerInstance = L.marker([selectedCoords.value.lat, selectedCoords.value.lng], { draggable: true }).addTo(mapInstance);
+        const customPin = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
+            iconSize: [40, 40],
+            iconAnchor: [20, 40],
+            popupAnchor: [0, -40]
+        });
+
+        markerInstance = L.marker([selectedCoords.value.lat, selectedCoords.value.lng], { 
+            draggable: true,
+            icon: customPin
+        }).addTo(mapInstance);
         
         mapInstance.on('click', async (e) => {
             const { lat, lng } = e.latlng;

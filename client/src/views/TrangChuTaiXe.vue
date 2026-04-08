@@ -64,9 +64,21 @@ const formatDate = (dateStr) => {
 };
 
 const getAvatarUrl = (path) => {
-    if (!path) return '';
-    if (path.startsWith('http')) return path.replace('http://localhost:3000', API_BASE_URL);
-    return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+    if (!path) return `${API_BASE_URL}/uploads/anhdaidienmacdinh.jpg`;
+    
+    // Nếu là URL tuyệt đối
+    if (path.startsWith('http')) {
+        return path.replace('http://localhost:3000', API_BASE_URL);
+    }
+
+    // Nếu đã có /uploads/ hoặc uploads/ ở đầu
+    if (path.includes('uploads/')) {
+        const cleanPath = path.startsWith('/') ? path : `/${path}`;
+        return `${API_BASE_URL}${cleanPath}`;
+    }
+
+    // Mặc định
+    return `${API_BASE_URL}/uploads/${path.startsWith('/') ? path.slice(1) : path}`;
 };
 
 const handleFileChange = async (event) => {
@@ -127,43 +139,70 @@ let driverMarker = null
 let shopMarkers = []
 let routingControl = null
 
+let lastRouteCoords = { dLat: 0, dLng: 0, destLat: 0, destLng: 0 };
+
 const updateRouting = (driverLat, driverLng, destLat, destLng) => {
   try {
     if (!map || !L.Routing) return;
+    
+    // Ngăn chặn cập nhật nếu khoảng cách quá nhỏ (tránh nhấp nháy)
+    const dist = Math.sqrt(Math.pow(driverLat - lastRouteCoords.dLat, 2) + Math.pow(driverLng - lastRouteCoords.dLng, 2));
+    const destDist = Math.sqrt(Math.pow(destLat - lastRouteCoords.destLat, 2) + Math.pow(destLng - lastRouteCoords.destLng, 2));
+    
+    if (routingControl && dist < 0.00005 && destDist < 0.00005) return;
+
     if (routingControl) {
       map.removeControl(routingControl);
       routingControl = null;
     }
     
+    lastRouteCoords = { dLat: driverLat, dLng: driverLng, destLat, destLng };
+
+    // Custom Routing giống Google Maps (Màu xanh dương đặc trưng, có viền trắng bóng)
     routingControl = L.Routing.control({
       waypoints: [L.latLng(driverLat, driverLng), L.latLng(destLat, destLng)],
       lineOptions: { 
-        styles: [{ color: '#10b981', weight: 6, opacity: 0.8 }] 
+        styles: [
+          { color: '#1a73e8', weight: 8, opacity: 0.9 }, // Màu xanh Google
+          { color: 'white', weight: 12, opacity: 0.3 }    // Viền mờ bao quanh
+        ] 
       },
       addWaypoints: false, 
       routeWhileDragging: false, 
       draggableWaypoints: false,
-      fitSelectedRoutes: false, 
+      fitSelectedRoutes: false, // Không tự động nhảy map để khớp lộ trình
       show: false, 
-      createMarker: () => null
+      createMarker: (i, wp) => {
+          if (i === 1) { // Marker cho điểm đích (Quán hoặc Khách)
+              const isPickedUp = currentOrder.value?.status === 'picked_up';
+              const iconUrl = isPickedUp 
+                ? 'https://cdn-icons-png.flaticon.com/512/1216/1216844.png' 
+                : 'https://cdn-icons-png.flaticon.com/512/857/857681.png';
+              
+              return L.marker(wp.latLng, {
+                  icon: L.icon({
+                      iconUrl: iconUrl,
+                      iconSize: [35, 35],
+                      iconAnchor: [17, 35]
+                  })
+              });
+          }
+          return null;
+      }
     }).addTo(map);
 
-    // Xử lý lỗi nếu máy chủ OSRM demo từ chối yêu cầu
-    routingControl.on('routingerror', (e) => {
-      console.warn("Lưu ý: Máy chủ tìm đường OSRM đang bận (Demo Server).");
-    });
   } catch (err) {
-    console.error("Lỗi khởi tạo chỉ đường:", err);
+    console.error("Lỗi chỉ đường:", err);
   }
 }
 
-const clearShopMarkers = () => { shopMarkers.forEach(m => map.removeLayer(m)); shopMarkers = []; }
+const clearShopMarkers = () => { shopMarkers.forEach(m => { if(map && m) map.removeLayer(m); }); shopMarkers = []; }
 
 const addShopMarker = (lat, lng, name, image) => {
   if (!map) return;
   clearShopMarkers();
   const icon = L.divIcon({
-    html: `<div class="shop-marker-icon"><img src="${image || ''}" /></div>`,
+    html: `<div class="shop-marker-icon"><img src="${getAvatarUrl(image)}" /></div>`,
     className: '', iconSize: [50, 50], iconAnchor: [25, 50]
   });
   const marker = L.marker([lat, lng], { icon }).addTo(map).bindPopup(`<b>${name}</b>`).openPopup();
@@ -172,28 +211,52 @@ const addShopMarker = (lat, lng, name, image) => {
 
 const updateDriverMarker = (lat, lng) => {
   if (!map) return;
-  const bikeIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3063/3063823.png', iconSize: [40, 40] });
-  if (driverMarker) driverMarker.setLatLng([lat, lng]);
-  else {
-    driverMarker = L.marker([lat, lng], { icon: bikeIcon }).addTo(map).bindPopup("Bạn").openPopup();
-    map.setView([lat, lng], 16);
+  
+  // Luôn cập nhật vị trí mới nhất của tài xế vào store
+  driverLocation.value = { lat, lng };
+
+  // Custom Marker với kích thước siêu nhỏ gọn (22px)
+  const driverIcon = L.divIcon({
+    html: `
+      <div class="driver-radar-container">
+        <div class="radar-ping"></div>
+        <div class="driver-core">
+          <img src="https://cdn-icons-png.flaticon.com/512/3063/3063823.png" / style="width: 33px;">
+        </div>
+      </div>
+    `,
+    className: '',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+
+  if (driverMarker) {
+    driverMarker.setLatLng([lat, lng]);
+  } else {
+    driverMarker = L.marker([lat, lng], { icon: driverIcon }).addTo(map).bindPopup("Bạn").openPopup();
+    map.setView([lat, lng], 17);
   }
 
-  // Auto routing logic
+  // Tự động giữ trọng tâm bản đồ vào tài xế khi di chuyển
+  if (isOnline.value && !isChatOpen.value) {
+      map.panTo([lat, lng]);
+  }
+
+  // Tự động vẽ đường khi đang trong đơn hàng
   if (isAccepted.value && currentOrder.value) {
-      if (currentOrder.value.status === 'picked_up') {
-          // Giao tới khách
-          updateRouting(lat, lng, currentOrder.value.lat_tra, currentOrder.value.lng_tra);
-      } else {
-          // Đi lấy hàng tại quán
-          updateRouting(lat, lng, currentOrder.value.lat_don, currentOrder.value.lng_don);
+      // Logic điểm đích thông minh
+      const isGoingToCustomer = currentOrder.value.status === 'picked_up';
+      const destLat = isGoingToCustomer ? currentOrder.value.lat_tra : currentOrder.value.lat_don;
+      const destLng = isGoingToCustomer ? currentOrder.value.lng_tra : currentOrder.value.lng_don;
+      
+      if (destLat && destLng) {
+          updateRouting(lat, lng, destLat, destLng);
       }
   }
 }
 
 const toggleConnection = () => {
   isOnline.value = !isOnline.value;
-  // Notify server about activity
   socket.emit('driver_active_status', { 
       userId: auth.user.id, 
       isActive: isOnline.value,
@@ -204,13 +267,12 @@ const toggleConnection = () => {
   if (isOnline.value) {
     navigator.geolocation.watchPosition((pos) => {
       const { latitude, longitude } = pos.coords;
-      driverLocation.value = { lat: latitude, lng: longitude };
       updateDriverMarker(latitude, longitude);
       socket.emit('update_driver_location', { userId: auth.user.id, lat: latitude, lng: longitude });
     }, null, { enableHighAccuracy: true });
   } else {
-    if (driverMarker) { map.removeLayer(driverMarker); driverMarker = null; }
-    if (routingControl) { map.removeControl(routingControl); routingControl = null; }
+    if (driverMarker && map) { map.removeLayer(driverMarker); driverMarker = null; }
+    if (routingControl && map) { map.removeControl(routingControl); routingControl = null; }
     clearShopMarkers();
     currentOrder.value = null;
     isAccepted.value = false;
@@ -229,20 +291,34 @@ const acceptOrder = async () => {
         currentOrder.value.status = 'driver_assigned';
         socket.emit('join_room', `order_${orderId}`);
         toast.success("Đã nhận đơn! Di chuyển tới quán ăn.");
-        updateRouting(driverLocation.value.lat, driverLocation.value.lng, currentOrder.value.lat_don, currentOrder.value.lng_don);
+        if (driverLocation.value) {
+            updateRouting(driverLocation.value.lat, driverLocation.value.lng, currentOrder.value.lat_don, currentOrder.value.lng_don);
+        }
     } catch (err) { toast.error("Lỗi nhận đơn: " + err.message); }
+}
+
+const pickedUpOrder = async () => {
+    if (!currentOrder.value) return;
+    try {
+        const orderId = currentOrder.value.orderId || currentOrder.value.id;
+        await axios.put(`${API_BASE_URL}/api/orders/${orderId}/status`, { status: 'picked_up' });
+        currentOrder.value.status = 'picked_up';
+        toast.success("Đã lấy hàng! Di chuyển tới nhà khách.");
+        if (driverLocation.value) {
+            updateRouting(driverLocation.value.lat, driverLocation.value.lng, currentOrder.value.lat_tra, currentOrder.value.lng_tra);
+        }
+    } catch (err) { toast.error("Lỗi: " + err.message); }
 }
 
 const completeOrder = async () => {
     if (!currentOrder.value) return;
-    // Bỏ confirm trình duyệt để mượt mà hơn
     try {
         const orderId = currentOrder.value.orderId || currentOrder.value.id;
         await axios.put(`${API_BASE_URL}/api/orders/${orderId}/status`, { status: 'delivered' });
         toast.success("Giao hàng thành công!");
         isAccepted.value = false;
         currentOrder.value = null;
-        if (routingControl) { map.removeControl(routingControl); routingControl = null; }
+        if (routingControl && map) { map.removeControl(routingControl); routingControl = null; }
         clearShopMarkers();
         fetchHistory();
     } catch (err) { toast.error("Lỗi: " + err.message); }
@@ -250,8 +326,18 @@ const completeOrder = async () => {
 
 onMounted(() => {
   if (!auth.user) { router.push('/login'); return; }
-  map = L.map(mapContainer.value).setView([21.0499, 105.7405], 14);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  map = L.map(mapContainer.value, {
+    zoomControl: false, 
+    attributionControl: false
+  }).setView([21.0499, 105.7405], 14);
+  
+  L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+    maxZoom: 20,
+    subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+  }).addTo(map);
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
   fetchHistory();
   fetchDriverStats();
 
@@ -267,7 +353,9 @@ onMounted(() => {
           currentOrder.value.status = data.status;
           if (data.status === 'picked_up') {
               toast.info("Bạn đã lấy hàng! Di chuyển tới nhà khách.");
-              updateRouting(driverLocation.value.lat, driverLocation.value.lng, currentOrder.value.lat_tra, currentOrder.value.lng_tra);
+              if (driverLocation.value) {
+                  updateRouting(driverLocation.value.lat, driverLocation.value.lng, currentOrder.value.lat_tra, currentOrder.value.lng_tra);
+              }
           }
       }
   });
@@ -290,13 +378,18 @@ onMounted(() => {
                 </p>
               </div>
               
-              <div v-if="isAccepted" class="w-full flex gap-3 mt-2">
-                <button class="flex-1 bg-blue-600 text-white py-3 rounded-2xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition" @click="isChatOpen = !isChatOpen">
-                  💬 CHAT
-                </button>
-                <button class="flex-1 bg-green-600 text-white py-3 rounded-2xl font-bold shadow-lg shadow-green-200 active:scale-95 transition" @click="completeOrder">
-                  ✅ HOÀN TẤT
-                </button>
+              <div v-if="isAccepted" class="w-full flex flex-col gap-2 mt-2">
+                <div class="flex gap-3">
+                  <button class="flex-1 bg-blue-600 text-white py-3 rounded-2xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition" @click="isChatOpen = !isChatOpen">
+                    💬 CHAT
+                  </button>
+                  <button v-if="currentOrder.status === 'driver_assigned'" class="flex-1 bg-orange-500 text-white py-3 rounded-2xl font-bold shadow-lg shadow-orange-200 active:scale-95 transition" @click="pickedUpOrder">
+                    📦 LẤY HÀNG
+                  </button>
+                  <button v-else-if="currentOrder.status === 'picked_up'" class="flex-1 bg-green-600 text-white py-3 rounded-2xl font-bold shadow-lg shadow-green-200 active:scale-95 transition" @click="completeOrder">
+                    ✅ HOÀN TẤT
+                  </button>
+                </div>
               </div>
               <div v-else class="flex justify-center mt-2">
                 <button class="toggle-online-btn-small" @click="toggleConnection" :class="{ 'btn-on': isOnline }">
@@ -513,6 +606,47 @@ onMounted(() => {
 
 :deep(.shop-marker-icon) { width: 48px; height: 48px; border-radius: 50%; border: 4px solid white; background: white; overflow: hidden; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
 :deep(.shop-marker-icon img) { width: 100%; height: 100%; object-fit: cover; }
+
+/* Radar Pulse Effect */
+.driver-radar-container {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.driver-core {
+    width: 34px;
+    height: 34px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    border: 2px solid #1a73e8;
+}
+.driver-core img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+}
+.radar-ping {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: #1a73e8;
+    border-radius: 50%;
+    opacity: 0.6;
+    animation: ping 1.8s ease-out infinite;
+    z-index: 1;
+}
+@keyframes ping {
+    0% { transform: scale(0.6); opacity: 0.8; }
+    100% { transform: scale(2.5); opacity: 0; }
+}
 
 .animate-fade-in { animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

@@ -187,7 +187,8 @@ const fetchData = async () => {
           distance: "2.5 km",
           promo: "Giảm 10%",
           image: s.image_url, 
-          isFavorite: false
+          isFavorite: false,
+          is_active: s.is_active // Thêm trạng thái hoạt động
       }));
 
       // 2. Fetch all products for search
@@ -351,13 +352,16 @@ const filteredFoods = computed(() => {
 
       <h2 class="title-section" style="margin-bottom: 30px;">Ưu đãi Giao Hàng Tận Nơi tại <span class="green-text">Hà Nội</span></h2>
       <div class="restaurant-grid">
-        <div v-for="res in filteredRestaurants" :key="res.id" class="restaurant-card-wrapper">
-          <router-link :to="'/restaurant/' + res.id" class="restaurant-card">
+        <div v-for="res in filteredRestaurants" :key="res.id" class="restaurant-card-wrapper" :class="{ 'shop-closed': !res.is_active }">
+          <router-link :to="res.is_active ? '/restaurant/' + res.id : '#'" class="restaurant-card" :class="{ 'disabled-link': !res.is_active }">
             <div class="image-box">
-              <img :src="getImageUrl(res.image)" alt="restaurant" />
-              <span class="promo-label">Promo</span>
+              <img :src="getImageUrl(res.image)" alt="restaurant" :class="{ 'grayscale': !res.is_active }" />
+              <span v-if="res.is_active" class="promo-label">Promo</span>
+              <div v-if="!res.is_active" class="closed-overlay">
+                <span>Đã đóng cửa, vui lòng quay lại vào ngày mai</span>
+              </div>
             </div>
-            <div class="info-box">
+            <div class="info-box" :class="{ 'grayscale-text': !res.is_active }">
               <h3 class="res-name notranslate">{{ res.name }}</h3>
               <p class="res-type">{{ res.type }}</p>
               <div class="res-meta">
@@ -367,11 +371,14 @@ const filteredFoods = computed(() => {
                 </span>
                 <span>{{ res.time }} • {{ res.distance }}</span>
               </div>
-              <div class="res-discount">
+              <div v-if="res.is_active" class="res-discount">
                 <span class="icon">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-1.41 1.41L15.17 8H2V10h13.17l-1.59 1.59L15 13l4-4-4-4zM11 19l1.41-1.41L10.83 16H24v-2H10.83l1.59-1.59L11 11l-4 4 4 4z"></path></svg>
                 </span> 
                 {{ res.promo }}
+              </div>
+              <div v-else class="res-status-closed">
+                🔴 Hiện đang đóng cửa
               </div>
             </div>
           </router-link>
@@ -442,8 +449,48 @@ const filteredFoods = computed(() => {
 .restaurant-card:hover { transform: translateY(-5px); }
 
 .image-box { position: relative; height: 180px; }
-.image-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
-.promo-label { position: absolute; top: 10px; left: 10px; background: #00b14f; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.image-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; transition: filter 0.3s; }
+
+/* Trạng thái đóng cửa */
+.grayscale { filter: grayscale(100%); }
+.grayscale-text { opacity: 0.6; }
+.disabled-link { pointer-events: none; cursor: default; }
+
+.closed-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  z-index: 2;
+}
+.closed-overlay span {
+  color: white;
+  font-weight: bold;
+  font-size: 14px;
+  line-height: 1.4;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.res-status-closed {
+  color: #ff4757;
+  font-size: 13px;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+.shop-closed {
+  cursor: not-allowed;
+}
+
+.promo-label { position: absolute; top: 10px; left: 10px; background: #00b14f; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; z-index: 1; }
 
 .favorite-icon { position: absolute; top: 10px; right: 10px; background: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
 

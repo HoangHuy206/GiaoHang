@@ -273,8 +273,10 @@ const getImageUrl = (url) => {
 
 const fetchOrders = async () => {
     try {
-        const shopsRes = await axios.get(`${API_BASE_URL}/api/shops`);
-        const myShop = shopsRes.data.find(s => s.user_id === auth.user.id);
+        loading.value = true;
+        // 1. Lấy thông tin shop của mình trực tiếp từ API chuyên biệt
+        const myShopRes = await axios.get(`${API_BASE_URL}/api/my-shop`);
+        const myShop = myShopRes.data;
         
         if (myShop) {
              myShopId.value = myShop.id;
@@ -285,6 +287,7 @@ const fetchOrders = async () => {
              shopConfig.bank_account = myShop.bank_account;
              shopConfig.telegram_chat_id = myShop.telegram_chat_id;
 
+             // 2. Tải danh sách đơn hàng cho shop này
              const res = await axios.get(`${API_BASE_URL}/api/orders?role=shop&shopId=${myShop.id}`);
              orders.value = res.data;
              
@@ -295,7 +298,13 @@ const fetchOrders = async () => {
              }
         }
     } catch (e) {
-        console.error(e);
+        console.error("Fetch Shop/Orders Error:", e);
+        const errorMsg = e.response?.data?.error || e.message;
+        if (e.response?.status === 404) {
+            toast.warning("Bạn chưa có shop nào được gán cho tài khoản này.");
+        } else {
+            toast.error("Không thể tải thông tin Shop: " + errorMsg);
+        }
     } finally {
         loading.value = false;
     }

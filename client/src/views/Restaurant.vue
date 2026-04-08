@@ -15,6 +15,9 @@
                   </div>
                   <div class="shop-text-info">
                       <h2 class="shop-name-title notranslate">{{ shop.name }}</h2>
+                      <div v-if="!shop.is_active" class="closed-status-badge">
+                        🔴 Hiện đang đóng cửa (Vui lòng quay lại vào ngày mai)
+                      </div>
                       <p class="shop-address-text">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline; margin-right:4px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
                         {{ shop.address }}
@@ -123,6 +126,11 @@ const flyToCart = (event, imageUrl) => {
 };
 
 const addToCartWithAnimation = async (event, product) => {
+    if (!shop.value.is_active) {
+        toast.error("Rất tiếc, quán hiện đang đóng cửa. Vui lòng quay lại vào ngày mai!");
+        return;
+    }
+
     if (!auth.user) {
         toast.info("Vui lòng đăng nhập để bắt đầu mua hàng!");
         setTimeout(() => {
@@ -299,6 +307,18 @@ const addToCart = async (product) => {
     font-weight: 800;
     color: #1a1a1a;
     margin: 0 0 5px 0;
+}
+
+.closed-status-badge {
+    background: #fee2e2;
+    color: #ef4444;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: bold;
+    display: inline-block;
+    margin-bottom: 10px;
+    border: 1px solid #fecaca;
 }
 
 .shop-address-text {

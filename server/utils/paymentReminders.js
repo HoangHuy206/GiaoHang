@@ -208,6 +208,35 @@ if (token) {
                     bot.sendMessage(chatId, "🍔 Nhập <b>Tên món ăn:</b>", { parse_mode: 'HTML' });
                     return;
                 }
+
+                if (text === '/xemsp') {
+                    try {
+                        const [shop] = await pool.query('SELECT id, name FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
+                        if (shop.length === 0) return bot.sendMessage(chatId, "⚠️ Shop của bạn chưa được liên kết.");
+                        
+                        const [prods] = await pool.query('SELECT id, name, price FROM products WHERE shop_id = ?', [shop[0].id]);
+                        if (prods.length === 0) return bot.sendMessage(chatId, `🏪 <b>${shop[0].name}</b> hiện chưa có món nào.`, { parse_mode: 'HTML' });
+
+                        let m = `📦 <b>DANH SÁCH MÓN (${shop[0].name}):</b>\n\n`;
+                        prods.forEach(p => { m += `• <b>${p.name}</b> - ${new Intl.NumberFormat('vi-VN').format(p.price)}đ\n`; });
+                        bot.sendMessage(chatId, m, { parse_mode: 'HTML' });
+                    } catch (e) { bot.sendMessage(chatId, "❌ Lỗi tải danh sách món."); }
+                    return;
+                }
+
+                if (text === '/xoasp') {
+                    try {
+                        const [shop] = await pool.query('SELECT id, name FROM shops WHERE telegram_chat_id = ?', [chatIdStr]);
+                        if (shop.length === 0) return bot.sendMessage(chatId, "⚠️ Shop của bạn chưa được liên kết.");
+                        
+                        const [prods] = await pool.query('SELECT id, name FROM products WHERE shop_id = ?', [shop[0].id]);
+                        if (prods.length === 0) return bot.sendMessage(chatId, "Không có món nào để xóa.");
+
+                        const kb = prods.map(p => [{ text: `🗑️ Xóa: ${p.name}`, callback_data: `del_prod_${p.id}` }]);
+                        bot.sendMessage(chatId, "👇 <b>Chọn món muốn xóa:</b>", { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+                    } catch (e) { bot.sendMessage(chatId, "❌ Lỗi thực hiện xóa."); }
+                    return;
+                }
             }
 
             const state = userStates[chatId];

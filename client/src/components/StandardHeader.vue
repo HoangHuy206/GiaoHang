@@ -97,11 +97,21 @@ const openCart = () => {
 };
 
 const getAvatarUrl = (path) => {
-  if (!path) return null;
-  if (path.startsWith('http')) return path;
-  // Giả sử server lưu ảnh trong thư mục uploads
-  const baseUrl = API_BASE_URL;
-  return `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
+    if (!path) return `${API_BASE_URL}/uploads/anhdaidienmacdinh.jpg`;
+    
+    // Nếu là URL tuyệt đối
+    if (path.startsWith('http')) {
+        return path.replace('http://localhost:3000', API_BASE_URL);
+    }
+
+    // Nếu đã có /uploads/ hoặc uploads/ ở đầu
+    if (path.includes('uploads/')) {
+        const cleanPath = path.startsWith('/') ? path : `/${path}`;
+        return `${API_BASE_URL}${cleanPath}`;
+    }
+
+    // Mặc định
+    return `${API_BASE_URL}/uploads/${path.startsWith('/') ? path.slice(1) : path}`;
 };
 </script>
 

@@ -20,6 +20,11 @@ const axios = require('axios');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
+// Import Mongoose Models
+const User = require('./models/User');
+const Order = require('./models/Order');
+const Review = require('./models/Review');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -220,9 +225,58 @@ async function broadcastOrderToDrivers(orderId) {
 
 // --- API ROUTES ---
 
-// Auth
-const User = require('./models/User'); // Import User model
+// Lấy thông tin shop của tôi (Dành cho chủ shop) - ĐƯA LÊN ĐẦU ĐỂ TRÁNH LỖI 404
+app.get('/api/my-shop', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const userRole = req.user.role;
 
+        console.log(`[DEBUG] /api/my-shop - UserID: ${userId}, Role: ${userRole}`);
+
+        // Nếu là Admin, cho phép họ quản lý shop đầu tiên nếu không có shop riêng
+        if (userRole === 'admin') {
+            const [adminShops] = await pool.query('SELECT * FROM shops LIMIT 1');
+            if (adminShops.length > 0) return res.json(adminShops[0]);
+        }
+
+        // Tìm shop theo user_id (thử cả kiểu số và kiểu chuỗi)
+        let [rows] = await pool.query('SELECT * FROM shops WHERE user_id = ?', [userId]);
+        
+        if (rows.length === 0 && !isNaN(userId)) {
+            [rows] = await pool.query('SELECT * FROM shops WHERE user_id = ?', [parseInt(userId)]);
+        }
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Tài khoản này chưa được gán quyền quản lý shop.' });
+        }
+
+        res.json(rows[0]);
+        } catch (e) {
+        console.error("Fetch my shop error:", e);
+        res.status(500).json({ error: 'Lỗi hệ hệ thống khi tải thông tin shop.' });
+        }
+        });
+
+        // Lấy thống kê đánh giá của tài xế
+        app.get('/api/drivers/:id/rating', async (req, res) => {
+        try {
+        const driverId = req.params.id;
+        const [rows] = await pool.query(`
+            SELECT AVG(rating) as avgRating, COUNT(*) as totalReviews 
+            FROM reviews 
+            WHERE order_id IN (SELECT id FROM orders WHERE driver_id = ?)`, [driverId]);
+
+        res.json({
+            avgRating: rows[0].avgRating || 5,
+            totalReviews: rows[0].totalReviews || 0
+        });
+        } catch (err) {
+        console.error("Fetch driver rating error:", err);
+        res.status(500).json({ error: 'Lỗi tải đánh giá tài xế.' });
+        }
+        });
+
+        // Auth
 app.post('/api/auth/register', async (req, res) => {
     const { fullName, email, username, password, role } = req.body;
     try {
@@ -563,8 +617,6 @@ app.put('/api/users/:id', authenticateToken, multer({
 });
 
 // Orders & Payment
-const Order = require('./models/Order'); // Import Mongo Order model
-
 app.post('/api/orders', authenticateToken, async (req, res) => {
     const { shopId, items, totalPrice, itemsPrice, deliveryFee, discount, deliveryAddress, deliveryLat, deliveryLng, paymentMethod, customerBankCode, customerBankAccount, customerBankName } = req.body;
     const userId = req.user.id; // Luôn sử dụng ID từ token đã xác thực
@@ -845,8 +897,8 @@ app.get('/api/products', async (req, res) => {
 
 app.get('/api/shops', async (req, res) => {
     try { 
-        // Lấy quán đang mở cửa và hiện mới nhất lên đầu
-        const [rows] = await pool.query('SELECT * FROM shops WHERE is_active = 1 ORDER BY id DESC'); 
+        // Lấy tất cả các quán, quán mới nhất lên đầu
+        const [rows] = await pool.query('SELECT * FROM shops ORDER BY is_active DESC, id DESC'); 
         res.json(rows); 
     } catch (e) { 
         res.json([]); 
@@ -863,6 +915,7 @@ app.get('/api/shops/:id', async (req, res) => {
 });
 
 app.put('/api/shops/:id', authenticateToken, multer({ 
+    limits: { fileSize: 5 * 1024 * 1024 }, // GIỚI HẠN 5MB
     storage: multer.diskStorage({
         destination: (req, file, cb) => cb(null, uploadDir),
         filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname))
@@ -872,7 +925,7 @@ app.put('/api/shops/:id', authenticateToken, multer({
         const mimetype = filetypes.test(file.mimetype);
         const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
         if (mimetype && extname) return cb(null, true);
-        cb(new Error("Chỉ hỗ trợ upload ảnh (jpeg, jpg, png, webp)"));
+        cb(new Error("Chỉ hỗ trợ upload ảnh (jpeg, jpg, png, webp) và dung lượng tối đa 5MB."));
     }
 }).single('banner'), async (req, res) => {
     const shopId = req.params.id;
@@ -975,6 +1028,42 @@ app.get('/api/payment/check/:orderCode', async (req, res) => {
     }
 });
 
+// Lấy thông tin shop của tôi (Dành cho chủ shop)
+app.get('/api/my-shop', authenticateToken, async (req, res) => {
+    try {
+        console.log(`[DEBUG] /api/my-shop for user: ${req.user.id} (${req.user.username}, role: ${req.user.role})`);
+        
+        // Nếu là Admin, cho phép họ xem shop đầu tiên làm mặc định hoặc theo shopId yêu cầu
+        if (req.user.role === 'admin') {
+            const [adminShops] = await pool.query('SELECT * FROM shops LIMIT 1');
+            if (adminShops.length > 0) {
+                console.log(`[DEBUG] Admin accessing first shop: ${adminShops[0].name}`);
+                return res.json(adminShops[0]);
+            }
+        }
+
+        const [rows] = await pool.query('SELECT * FROM shops WHERE user_id = ?', [req.user.id]);
+        if (rows.length === 0) {
+            console.log(`[DEBUG] No shop found for user_id: ${req.user.id}`);
+            // Thử tìm xem có phải vấn đề về kiểu dữ liệu không (INT vs String)
+            if (typeof req.user.id === 'string' && !isNaN(req.user.id)) {
+                console.log(`[DEBUG] Retrying with parsed user_id: ${parseInt(req.user.id)}`);
+                const [rowsRetry] = await pool.query('SELECT * FROM shops WHERE user_id = ?', [parseInt(req.user.id)]);
+                if (rowsRetry.length > 0) {
+                    console.log(`[DEBUG] Found shop on retry!`);
+                    return res.json(rowsRetry[0]);
+                }
+            }
+            return res.status(404).json({ error: 'Bạn chưa được gán quyền quản lý shop nào.' });
+        }
+        console.log(`[DEBUG] Found shop: ${rows[0].name} (ID: ${rows[0].id})`);
+        res.json(rows[0]);
+    } catch (e) {
+        console.error("Fetch my shop error:", e);
+        res.status(500).json({ error: 'Lỗi tải thông tin shop của bạn.' });
+    }
+});
+
 // API Hỗ trợ (Public)
 app.post('/api/support', async (req, res) => {
     const { name, phone, email, subject, message } = req.body;
@@ -994,18 +1083,101 @@ app.post('/api/support', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lỗi gửi mail." }); }
 });
 
+// Đánh giá đơn hàng
+app.post('/api/reviews', authenticateToken, async (req, res) => {
+    const { orderId, rating, comment } = req.body;
+    const userId = req.user.id;
+    
+    if (!orderId || !rating) {
+        return res.status(400).json({ error: 'Thiếu thông tin đánh giá.' });
+    }
+
+    try {
+        // 1. Lấy thông tin shop_id từ đơn hàng
+        const [orderRows] = await pool.query('SELECT id, shop_id, driver_id FROM orders WHERE id = ?', [orderId]);
+        if (orderRows.length === 0) {
+            return res.status(404).json({ error: 'Không tìm thấy đơn hàng.' });
+        }
+        
+        const shopId = orderRows[0].shop_id;
+        
+        // 2. Lưu vào TiDB (Database chính)
+        const [result] = await pool.query(
+            'INSERT INTO reviews (order_id, user_id, shop_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
+            [orderId, userId, shopId, rating, comment || '']
+        );
+        const reviewId = result.insertId;
+
+        // Cập nhật trạng thái đơn hàng đã được đánh giá
+        await pool.query('UPDATE orders SET is_completed_by_user = 1 WHERE id = ?', [orderId]);
+
+        // 3. Đồng bộ sang MongoDB (Xử lý ngầm)
+        setImmediate(async () => {
+            try {
+                const ReviewModel = require('./models/Review');
+                const OrderModel = require('./models/Order');
+                
+                await ReviewModel.create({
+                    originalId: reviewId,
+                    order_id: Number(orderId),
+                    user_id: Number(userId),
+                    shop_id: Number(shopId),
+                    rating: Number(rating),
+                    comment: comment || '',
+                    created_at: new Date()
+                });
+                
+                await OrderModel.findOneAndUpdate(
+                    { originalId: Number(orderId) }, 
+                    { is_completed_by_user: true }
+                );
+                console.log(`🍃 Review ${reviewId} synced to MongoDB.`);
+            } catch (mongoErr) {
+                console.error('❌ MongoDB Review Sync Error:', mongoErr.message);
+            }
+        });
+
+        res.json({ success: true, message: 'Gửi đánh giá thành công!' });
+    } catch (err) {
+        console.error("Submit Review Error:", err);
+        res.status(500).json({ error: 'Lỗi hệ thống khi gửi đánh giá.' });
+    }
+});
+
 // Static Files với CORS riêng để tránh lỗi không hiện ảnh
 app.use('/uploads', cors(corsOptions), express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
 io.on('connection', (s) => {
     s.on('join_room', (r) => s.join(r));
-    s.on('driver_active_status', (d) => d.isActive ? onlineDrivers.set(d.userId, { socketId: s.id, ...d }) : onlineDrivers.delete(d.userId));
+    
+    // Lưu thông tin userId để xử lý khi disconnect
+    s.on('driver_active_status', (d) => {
+        s.data.userId = d.userId; // Gắn ID vào session của socket
+        if (d.isActive) {
+            onlineDrivers.set(d.userId, { socketId: s.id, ...d });
+            console.log(`[Socket] Tài xế ${d.userId} Đang hoạt động (Tổng: ${onlineDrivers.size})`);
+        } else {
+            onlineDrivers.delete(d.userId);
+            console.log(`[Socket] Tài xế ${d.userId} Đã tắt hoạt động (Tổng: ${onlineDrivers.size})`);
+        }
+    });
+
     s.on('send_message', async (d) => {
         try { 
             await pool.query('INSERT INTO messages (order_id, sender_id, content) VALUES (?,?,?)', [d.orderId, d.senderId, d.content]);
             io.to(`order_${d.orderId}`).emit('receive_message', d);
-        } catch(e){}
+        } catch(e) {
+            console.error("[Socket] Lỗi gửi tin nhắn:", e);
+        }
+    });
+
+    // Cực kỳ quan trọng: Xóa tài xế khi họ rớt mạng, đóng tab, hoặc tắt điện thoại
+    s.on('disconnect', () => {
+        if (s.data.userId && onlineDrivers.has(s.data.userId)) {
+            onlineDrivers.delete(s.data.userId);
+            console.log(`[Socket] Tài xế ${s.data.userId} Mất kết nối, đã xóa khỏi danh sách (Tổng: ${onlineDrivers.size})`);
+        }
     });
 });
 

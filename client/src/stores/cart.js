@@ -41,9 +41,7 @@ export const useCartStore = defineStore('cart', {
       localStorage.setItem(key, JSON.stringify(this.items));
     },
     addToCart(product, shopId, shopName) {
-      // Đảm bảo nạp đúng giỏ hàng của user trước khi thêm
-      this.loadFromStorage();
-      
+      // Tìm trong danh sách hiện tại thay vì reload liên tục
       const existing = this.items.find(i => i.productId === product.id && i.shopId === shopId);
       if (existing) {
         existing.quantity++;
