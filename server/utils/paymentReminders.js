@@ -350,8 +350,19 @@ module.exports = function(io) {
                         bot.sendMessage(chatId, "👤 Nhập <b>Tên đăng nhập:</b>", { parse_mode: 'HTML' });
                     }
                     else if (state.step === 'AWAITING_NEW_SHOP_USERNAME') {
-                        state.data.username = text.toLowerCase().replace(/\s/g, ''); state.step = 'AWAITING_NEW_SHOP_PASSWORD';
-                        bot.sendMessage(chatId, "🔑 Nhập <b>Mật khẩu:</b>", { parse_mode: 'HTML' });
+                        const requestedUsername = text.toLowerCase().replace(/\s/g, '');
+                        try {
+                            const [existingUser] = await pool.query('SELECT id FROM users WHERE username = ?', [requestedUsername]);
+                            if (existingUser.length > 0) {
+                                return bot.sendMessage(chatId, `❌ Tên đăng nhập <code>${requestedUsername}</code> đã tồn tại. Vui lòng nhập tên khác:`, { parse_mode: 'HTML' });
+                            }
+                            state.data.username = requestedUsername; 
+                            state.step = 'AWAITING_NEW_SHOP_PASSWORD';
+                            bot.sendMessage(chatId, "🔑 Nhập <b>Mật khẩu:</b>", { parse_mode: 'HTML' });
+                        } catch (err) {
+                            console.error("Error checking username:", err);
+                            bot.sendMessage(chatId, "❌ Có lỗi xảy ra khi kiểm tra tên đăng nhập. Thử lại:");
+                        }
                     }
                     else if (state.step === 'AWAITING_NEW_SHOP_PASSWORD') {
                         const bcrypt = require('bcrypt');

@@ -67,7 +67,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import StandardHeader from '../components/StandardHeader.vue';
 import { useAuthStore } from '../stores/auth';
