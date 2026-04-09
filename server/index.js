@@ -981,7 +981,13 @@ app.delete('/api/admin/shops/:id', authenticateToken, isAdmin, async (req, res) 
             await conn.query('DELETE FROM shops WHERE id = ?', [shopId]);
             if (s[0].user_id) await conn.query('DELETE FROM users WHERE id = ?', [s[0].user_id]);
         }
-        await conn.commit(); res.json({ success: true });
+        await conn.commit(); 
+        
+        // Emit Socket.io event
+        io.emit('shop_deleted', { id: shopId });
+        console.log(`📡 Socket.io: shop_deleted emitted for shopId ${shopId}`);
+        
+        res.json({ success: true });
     } catch (e) { await conn.rollback(); res.status(500).json({ error: 'Lỗi xóa quán (Admin).' }); }
     finally { conn.release(); }
 });

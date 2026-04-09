@@ -444,6 +444,13 @@ module.exports = function(io) {
                         await conn.query('DELETE FROM shops WHERE id = ?', [shopId]);
                         if (userId) await conn.query('DELETE FROM users WHERE id = ?', [userId]);
                         await conn.commit();
+                        
+                        // Emit Socket.io event for real-time deletion
+                        if (io) {
+                            io.emit('shop_deleted', { id: shopId });
+                            console.log(`📡 Socket.io: shop_deleted emitted for shopId ${shopId}`);
+                        }
+                        
                         bot.editMessageText(`✅ Đã xóa vĩnh viễn Shop ID ${shopId}.`, { chat_id: chatId, message_id: message.message_id });
                     } catch (e) { await conn.rollback(); bot.sendMessage(chatId, `❌ Lỗi xóa Shop: ${e.message}`); }
                     finally { conn.release(); }

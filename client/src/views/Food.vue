@@ -261,6 +261,16 @@ onMounted(async () => {
     }
   });
 
+  socket.on('shop_deleted', (data) => {
+    console.log("🗑️ Shop deleted received via socket:", data);
+    const index = restaurants.value.findIndex(r => String(r.id) === String(data.id));
+    if (index !== -1) {
+        const deletedShopName = restaurants.value[index].name;
+        restaurants.value.splice(index, 1);
+        toast.warning(`🗑️ Cửa hàng ${deletedShopName} đã ngừng hoạt động.`);
+    }
+  });
+
   // Store socket in a ref or local variable to clean up
   onUnmounted(() => { 
     if (timer) clearInterval(timer);

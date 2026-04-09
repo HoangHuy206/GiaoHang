@@ -170,6 +170,45 @@ const showShopDetail = (shop) => {
     selectedShop.value = shop;
 };
 
+// Real-time socket updates
+let socket = null;
+const initSocket = async () => {
+    try {
+        const { io } = await import('socket.io-client');
+        const { SOCKET_URL } = await import('../config');
+        socket = io(SOCKET_URL);
+
+        socket.on('new_shop', (newShop) => {
+            console.log("🏪 Admin: New shop received via socket:", newShop);
+            const exists = shops.value.some(s => s.id === newShop.id);
+            if (!exists) {
+                // Thêm shop mới vào đầu danh sách với các trường cần thiết cho admin
+                shops.value.unshift({
+                    ...newShop,
+                    owner_name: 'Đang cập nhật...',
+                    owner_username: '...',
+                    registration_date: new Date().toISOString()
+                });
+                toast.info(`🏪 Shop mới vừa được tạo: ${newShop.name}`);
+                // Re-fetch to get full owner details if needed
+                setTimeout(fetchShops, 2000);
+            }
+        });
+
+        socket.on('shop_deleted', (data) => {
+            console.log("🗑️ Admin: Shop deleted received via socket:", data);
+            const index = shops.value.findIndex(s => String(s.id) === String(data.id));
+            if (index !== -1) {
+                const deletedName = shops.value[index].name;
+                shops.value.splice(index, 1);
+                toast.warning(`🗑️ Shop "${deletedName}" đã bị xóa khỏi hệ thống.`);
+            }
+        });
+    } catch (e) {
+        console.error("Socket error in AdminDashboard:", e);
+    }
+};
+
 const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     const date = new Date(dateStr);
@@ -218,6 +257,7 @@ onMounted(() => {
         return;
     }
     fetchShops();
+    initSocket();
 });
 </script>
 

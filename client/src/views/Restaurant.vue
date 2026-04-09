@@ -196,6 +196,14 @@ onMounted(async () => {
             }
         });
 
+        socket.on('shop_deleted', (data) => {
+            console.log("🗑️ Shop deleted received via socket:", data);
+            if (shop.value && String(data.id) === String(shop.value.id)) {
+                toast.error(`⚠️ Cửa hàng "${shop.value.name}" đã ngừng hoạt động.`);
+                router.push('/food');
+            }
+        });
+
         // Store socket to clean up
         route.socket = socket;
     } catch (error) {
@@ -206,6 +214,7 @@ onMounted(async () => {
 onUnmounted(() => {
     if (route.socket) {
         route.socket.off('new_product');
+        route.socket.off('shop_deleted');
         route.socket.disconnect();
     }
 });
