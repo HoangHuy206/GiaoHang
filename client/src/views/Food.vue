@@ -235,9 +235,39 @@ const fetchData = async () => {
 onMounted(async () => {
   timer = setInterval(nextSlide, 4000)
   await fetchData();
-})
 
-onUnmounted(() => { if (timer) clearInterval(timer) })
+  // Use dynamic import to avoid duplicate declaration at top level
+  const { io } = await import('socket.io-client');
+  const { SOCKET_URL } = await import('../config');
+  const socket = io(SOCKET_URL);
+
+  socket.on('new_shop', (newShop) => {
+    console.log("🏪 New shop received via socket:", newShop);
+    const exists = restaurants.value.some(r => r.id === newShop.id);
+    if (!exists) {
+        restaurants.value.unshift({
+            id: newShop.id,
+            name: newShop.name,
+            type: "Quán ăn mới", 
+            rating: 5.0, 
+            time: "25-35 phút",
+            distance: "1.2 km",
+            promo: "Mới khai trương",
+            image: newShop.image_url, 
+            isFavorite: false,
+            is_active: 1
+        });
+        toast.info(`🏪 Cửa hàng mới: ${newShop.name} vừa xuất hiện!`);
+    }
+  });
+
+  // Store socket in a ref or local variable to clean up
+  onUnmounted(() => { 
+    if (timer) clearInterval(timer);
+    socket.off('new_shop');
+    socket.disconnect();
+  })
+})
 
 // --- LOGIC MỚI: BẤM TIM GỌI API ---
 const toggleFavorite = async (res) => {

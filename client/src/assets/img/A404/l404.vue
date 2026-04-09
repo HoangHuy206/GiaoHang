@@ -1,157 +1,89 @@
 <template>
-  <div class="chrome-crash-page">
-    
-    <div v-if="isLoading" class="white-screen"></div>
-
-    <div v-else class="content-container">
-      
-      <div class="icon-wrapper">
-        <img :src="errorImg" alt="Crash Icon" class="crash-img">
+  <div class="not-found-container">
+    <div class="content">
+      <h1 class="error-code">404</h1>
+      <div class="icon-box">
+        <svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="#00b14f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+          <line x1="12" y1="9" x2="12" y2="13"></line>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
       </div>
-
-      <h1 class="crash-title">Ôi, hỏng!</h1>
-      <p class="crash-desc">Đã xảy ra lỗi khi hiển thị trang web này.</p>
-      <p class="error-code">Mã lỗi: RESULT_CODE_KILLED</p>
-
-      <div class="action-footer">
-        <a href="https://support.google.com/chrome" target="_blank" class="link-help">Tìm hiểu thêm</a>
-        <button class="btn-reload" @click="reloadPage">Tải lại</button>
-      </div>
-
+      <h2 class="title">Không tìm thấy trang</h2>
+      <p class="description">Rất tiếc, trang bạn đang tìm kiếm không tồn tại hoặc đã bị di chuyển.</p>
+      <button class="home-btn" @click="$router.push('/')">Về trang chủ</button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
-import errorImg from './anhloi404.jpg';
-
-const isLoading = ref(true);
-
-onMounted(() => {
-  // SỬA Ở ĐÂY: Delay 3 giây (3000ms)
-  setTimeout(() => {
-    isLoading.value = false;
-  }, 3000);
-});
-
-const reloadPage = () => {
-  window.location.reload();
-};
+// No extra logic needed
 </script>
 
 <style scoped>
-/* Reset cơ bản */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-/* Khung bao ngoài cùng */
-.chrome-crash-page {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
+.not-found-container {
   height: 100vh;
-  background-color: #fff;
-  z-index: 9999;
   display: flex;
   justify-content: center;
-  padding-top: 12vh;
-  font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  color: #202124;
+  align-items: center;
+  background-color: #f9fbf9;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  text-align: center;
+  padding: 20px;
 }
 
-/* Màn hình trắng loading */
-.white-screen {
-  width: 100%;
-  height: 100%;
-  background: #fff;
-}
-
-/* Khung nội dung chính */
-.content-container {
-  width: 100%;
-  max-width: 600px;
-  padding: 0 24px;
-  text-align: left; /* Đảm bảo mọi thứ bên trong căn trái */
-}
-
-/* Icon Wrapper */
-.icon-wrapper {
-  margin-bottom: 24px;
-}
-
-/* SỬA Ở ĐÂY: Class mới cho ảnh */
-.crash-img {
-  width: 72px; /* Kích thước chuẩn icon Chrome */
-  height: auto; /* Giữ tỷ lệ ảnh */
-  display: block; /* Đảm bảo nằm riêng 1 dòng */
-  /* Không cần margin-left/right vì container đã text-align: left */
-}
-
-/* Typography */
-.crash-title {
-  font-size: 24px;
-  font-weight: 500;
-  margin-bottom: 16px;
-  color: #202124;
-}
-
-.crash-desc {
-  font-size: 15px;
-  color: #5f6368;
-  margin-bottom: 12px;
+.content {
+  max-width: 500px;
+  background: white;
+  padding: 50px;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.05);
 }
 
 .error-code {
-  font-size: 12px;
-  color: #5f6368;
-  margin-bottom: 40px;
-  text-transform: uppercase;
+  font-size: 80px;
+  font-weight: 900;
+  color: #00b14f;
+  margin-bottom: 0;
+  line-height: 1;
 }
 
-/* Footer */
-.action-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
+.icon-box {
+  margin: 20px 0;
 }
 
-/* Link */
-.link-help {
-  color: #1a73e8;
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
-}
-.link-help:hover {
-  text-decoration: underline;
+.title {
+  font-size: 24px;
+  color: #333;
+  margin-bottom: 15px;
 }
 
-/* Nút Tải lại (Đã xóa đoạn text rác bị lỗi) */
-.btn-reload {
-  background-color: #1a73e8;
+.description {
+  color: #666;
+  margin-bottom: 30px;
+  line-height: 1.6;
+}
+
+.home-btn {
+  background-color: #00b14f;
   color: white;
   border: none;
-  border-radius: 4px;
-  padding: 8px 16px;
-  font-size: 14px;
-  font-weight: 500;
+  padding: 15px 40px;
+  font-size: 16px;
+  font-weight: bold;
+  border-radius: 50px;
   cursor: pointer;
-  outline: none;
-  transition: background 0.2s;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0, 177, 79, 0.3);
 }
 
-.btn-reload:hover {
-  background-color: #1765cc;
-box-shadow: 0 1px 2px rgba(60,64,67,0.3);
+.home-btn:hover {
+  background-color: #008f3e;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 177, 79, 0.4);
 }
 
-.btn-reload:active {
-  background-color: #1558b0;
+.home-btn:active {
+  transform: translateY(0);
 }
 </style>

@@ -71,7 +71,7 @@ const openCart = () => {
     </main>
     <!-- Global Components -->
     <CartDrawer v-if="!isSplashing" />
-    <AI v-if="!isSplashing && (!auth.user || auth.user.role === 'user' || auth.user.role === 'shop') && !['/login', '/dangky', '/dangkytaixe', '/hoidangky'].includes(router.currentRoute.value.path)" />
+    <AI v-if="!isSplashing && (!auth.user || auth.user.role === 'user' || auth.user.role === 'shop') && !['/login', '/dangky', '/dangkytaixe', '/hoidangky'].includes(router.currentRoute.value.path) && router.currentRoute.value.name !== 'PageNotFound'" />
     <Toast />
     <ConfirmModal />
   </div>

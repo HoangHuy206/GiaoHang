@@ -132,12 +132,22 @@
                     <div class="loading-dot"></div> Đang chờ nhận tiền...
                   </div>
                 </div>
-                <div v-else-if="paymentStatus === 'success'" style="color: #00b14f; font-weight: bold; padding: 30px 0;">
-                   <div style="font-size: 50px; margin-bottom: 10px;">✅</div>
-                   <h3 style="margin: 0; font-size: 22px;">Thanh toán thành công!</h3>
-                   <p style="color: #666; font-weight: normal; margin-top: 10px;">Đơn hàng của bạn đang được xử lý.</p>
-                </div>
-              </div>
+                <div v-else-if="paymentStatus === 'success'" class="success-animation-container">
+                  <div class="success-checkmark">
+                    <div class="check-icon">
+                      <span class="icon-line line-tip"></span>
+                      <span class="icon-line line-long"></span>
+                      <div class="icon-circle"></div>
+                      <div class="icon-fix"></div>
+                    </div>
+                  </div>
+                  <h3 class="success-title">Thanh toán thành công!</h3>
+                  <p class="success-desc">Đơn hàng của bạn đang được xử lý và sẽ sớm được giao đến bạn.</p>
+                  <div class="success-actions">
+                     <button @click="$router.push('/theodoidonhang')" class="btn-view-order">Theo dõi đơn hàng</button>
+                     <button @click="$router.push('/food')" class="btn-continue">Tiếp tục mua sắm</button>
+                  </div>
+                </div>              </div>
             </div>
           </div>
         </div>
@@ -502,19 +512,163 @@ export default {
 .map-header { padding: 15px 20px; background: #f0f2f5; display: flex; justify-content: space-between; align-items: center; }
 .confirm-map-btn { background: #00b14f; color: white; border: none; padding: 12px 30px; font-weight: bold; border-radius: 6px; cursor: pointer; }
 
-/* Loading Animation */
-.loading-dot {
-  width: 8px;
-  height: 8px;
-  background: #e67e22;
-  border-radius: 50%;
-  animation: pulse 1.5s infinite;
+/* Success Animation Styles */
+.success-animation-container {
+  padding: 40px 20px;
+  text-align: center;
+  background: white;
+  border-radius: 15px;
+  animation: fadeIn 0.5s ease-out;
 }
 
-@keyframes pulse {
-  0% { transform: scale(0.8); opacity: 0.5; }
-  50% { transform: scale(1.2); opacity: 1; }
-  100% { transform: scale(0.8); opacity: 0.5; }
+.success-title {
+  color: #00b14f;
+  font-size: 24px;
+  margin: 20px 0 10px;
+  font-weight: 800;
+}
+
+.success-desc {
+  color: #666;
+  font-size: 15px;
+  line-height: 1.6;
+  max-width: 300px;
+  margin: 0 auto 30px;
+}
+
+.success-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-view-order {
+  background: #00b14f;
+  color: white;
+  border: none;
+  padding: 14px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.btn-continue {
+  background: #f0fbf4;
+  color: #00b14f;
+  border: 1px solid #00b14f;
+  padding: 14px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* Animated Checkmark */
+.success-checkmark {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto;
+}
+
+.check-icon {
+  width: 80px;
+  height: 80px;
+  position: relative;
+  border-radius: 50%;
+  box-sizing: content-box;
+  border: 4px solid #4caf50;
+}
+
+.check-icon::before {
+  top: 3px;
+  left: -2px;
+  width: 30px;
+  transform-origin: 100% 50%;
+  border-radius: 100px 0 0 100px;
+}
+
+.check-icon::after {
+  top: 0;
+  left: 30px;
+  width: 60px;
+  transform-origin: 0 50%;
+  border-radius: 0 100px 100px 0;
+  animation: rotate-circle 4.25s ease-in;
+}
+
+.icon-line {
+  height: 5px;
+  background-color: #4caf50;
+  display: block;
+  border-radius: 2px;
+  position: absolute;
+  z-index: 10;
+}
+
+.icon-line.line-tip {
+  top: 46px;
+  left: 14px;
+  width: 25px;
+  transform: rotate(45deg);
+  animation: icon-line-tip 0.75s;
+}
+
+.icon-line.line-long {
+  top: 38px;
+  right: 8px;
+  width: 47px;
+  transform: rotate(-45deg);
+  animation: icon-line-long 0.75s;
+}
+
+.icon-circle {
+  top: -4px;
+  left: -4px;
+  z-index: 10;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 4px solid rgba(76, 175, 80, 0.2);
+  box-sizing: content-box;
+  position: absolute;
+}
+
+.icon-fix {
+  top: 8px;
+  width: 5px;
+  left: 26px;
+  z-index: 1;
+  height: 85px;
+  position: absolute;
+  transform: rotate(-45deg);
+  background-color: white;
+}
+
+@keyframes icon-line-tip {
+  0% { width: 0; left: 1px; top: 19px; }
+  54% { width: 0; left: 1px; top: 19px; }
+  70% { width: 50px; left: -8px; top: 37px; }
+  84% { width: 17px; left: 21px; top: 48px; }
+  100% { width: 25px; left: 14px; top: 46px; }
+}
+
+@keyframes icon-line-long {
+  0% { width: 0; right: 46px; top: 54px; }
+  65% { width: 0; right: 46px; top: 54px; }
+  84% { width: 55px; right: 0px; top: 35px; }
+  100% { width: 47px; right: 8px; top: 38px; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes rotate-circle {
+  0% { transform: rotate(-45deg); }
+  5% { transform: rotate(-45deg); }
+  12% { transform: rotate(-405deg); }
+  100% { transform: rotate(-405deg); }
 }
 
 @media (max-width: 768px) {

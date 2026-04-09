@@ -156,6 +156,7 @@ const addToCartWithAnimation = async (event, product) => {
     }, 800);
 };
 
+// Socket listener added here
 onMounted(async () => {
     try {
         const res = await axios.get(`${API_BASE_URL}/api/shops/${route.params.id}`);
@@ -170,8 +171,42 @@ onMounted(async () => {
                 el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
+
+        // Initialize socket only once if not already initialized or use global one if exists
+        // However, for simplicity and ensuring it works in this component:
+        const { io } = await import('socket.io-client');
+        const { SOCKET_URL } = await import('../config');
+        const socket = io(SOCKET_URL);
+
+        // Listen for new products
+        socket.on('new_product', (newProduct) => {
+            console.log("🍔 New product received via socket:", newProduct);
+            if (shop.value && String(newProduct.shopId) === String(shop.value.id)) {
+                const exists = products.value.some(p => p.id === newProduct.id);
+                if (!exists) {
+                    products.value.unshift({
+                        id: newProduct.id || Date.now(),
+                        name: newProduct.name,
+                        price: newProduct.price,
+                        image_url: newProduct.image_url,
+                        shop_id: newProduct.shopId
+                    });
+                    toast.info(`🍔 Món mới: ${newProduct.name} vừa được thêm vào thực đơn!`);
+                }
+            }
+        });
+
+        // Store socket to clean up
+        route.socket = socket;
     } catch (error) {
         console.error(error);
+    }
+});
+
+onUnmounted(() => {
+    if (route.socket) {
+        route.socket.off('new_product');
+        route.socket.disconnect();
     }
 });
 
